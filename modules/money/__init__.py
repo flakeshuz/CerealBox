@@ -33,6 +33,7 @@ BILL_HOUR = time(9, 0)  # bills remind at 9 AM on the reminder days
 class MoneyModule(Module):
     name = "money"
     title = "Money"
+    show_in_navigation = True
 
     # ---- lifecycle -------------------------------------------------------------------------
     def setup(self) -> None:

@@ -49,6 +49,7 @@ class ImportResult:
 class CalendarModule(Module):
     name = "calendar"
     title = "Calendar"
+    show_in_navigation = True
 
     # ---- lifecycle ---------------------------------------------------------------------
     def setup(self) -> None:

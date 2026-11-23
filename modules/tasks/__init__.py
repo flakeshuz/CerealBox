@@ -29,6 +29,7 @@ def _sort_key(t: Task):
 class TasksModule(Module):
     name = "tasks"
     title = "Tasks"
+    show_in_navigation = True
 
     # ---- lifecycle -----------------------------------------------------------------------
     def setup(self) -> None:

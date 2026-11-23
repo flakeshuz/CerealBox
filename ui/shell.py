@@ -101,7 +101,7 @@ class Shell(QMainWindow):
                     "Theme reset",
                     f"The saved theme could not be loaded. Warm light will be used for this session.\n\n{exc}",
                 )
-        modules = list(api.modules.values())
+        modules = [module for module in api.modules.values() if module.show_in_navigation]
         self._modules = modules
         self._titles = [module.title for module in modules]
         self._pages = {}

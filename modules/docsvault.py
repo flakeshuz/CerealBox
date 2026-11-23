@@ -11,6 +11,7 @@ class DocsVaultModule(Module):
         return DocsVaultView(parent, self)
     name = "docsvault"
     title = "Document Vault"
+    show_in_navigation = True
 
     def setup(self):
         # All documents stored under the 'docsvault.docs' collection

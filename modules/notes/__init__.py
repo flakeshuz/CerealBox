@@ -9,6 +9,7 @@ from ..base import Module
 class NotesModule(Module):
     name = "notes"
     title = "Notes"
+    show_in_navigation = True
 
     def setup(self):
         self.notes = self.col("notes")

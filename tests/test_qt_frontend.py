@@ -206,7 +206,12 @@ class QtFrontendTests(unittest.TestCase):
             try:
                 with patch("CerealBox.ui.shell.unlock_vault", return_value=vault):
                     self.assertTrue(shell.start())
-                self.assertEqual(shell.nb.count(), len(shell.api.modules))
+                self.assertEqual(
+                    shell.nb.count(),
+                    sum(module.show_in_navigation for module in shell.api.modules.values()),
+                )
+                self.assertIn("contacts", shell.api.modules)
+                self.assertNotIn("Contacts", shell._titles)
                 self.assertTrue(all(isinstance(shell.nb.widget(i), QWidget) for i in range(shell.nb.count())))
                 self.assertEqual(set(shell._pages), {"Dashboard"})
                 self.assertEqual(shell._page_title.text(), "Today")

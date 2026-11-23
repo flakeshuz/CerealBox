@@ -10,6 +10,7 @@ from ..core.api import Collection, LifeAPI
 class Module:
     name: str = ""  # short, unique, lowercase - also the namespace for storage and services
     title: str = ""  # shown on the tab
+    show_in_navigation: bool = False
 
     api: LifeAPI
 

@@ -71,7 +71,8 @@ def start(vault_path: str) -> bool:
     # Quick module list snapshot
     mod_list = QtWidgets.QListWidget()
     for m in api.modules.values():
-        mod_list.addItem(m.title)
+        if m.show_in_navigation:
+            mod_list.addItem(m.title)
     layout.addWidget(mod_list)
 
     window.setCentralWidget(central)

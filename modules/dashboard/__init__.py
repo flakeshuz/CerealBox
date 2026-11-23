@@ -28,6 +28,7 @@ from ..base import Module
 class DashboardModule(Module):
     name = "dashboard"
     title = "Dashboard"
+    show_in_navigation = True
 
     def setup(self):
         self._layout = self._read_layout()
