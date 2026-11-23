@@ -1,13 +1,18 @@
-"""Dialogs for the calendar: the event editor, the 'this one or all?' prompt, the category manager."""
+"""Dialogs for calendar events, categories, and linked-event details."""
 from __future__ import annotations
 
-import tkinter as tk
 from datetime import datetime, timedelta
-from tkinter import colorchooser, messagebox, ttk
+
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QColor, QKeySequence, QShortcut
+from PyQt6.QtWidgets import (
+    QCheckBox, QColorDialog, QComboBox, QDialog, QDialogButtonBox, QFormLayout,
+    QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton, QRadioButton,
+    QSpinBox, QTextEdit, QVBoxLayout, QWidget,
+)
 
 from ...core import dates as D
 from ...core.ids import new_id
-from ...ui import theme as T
 from .models import DEFAULT_COLOR, IMPORT_PALETTE, Category, Event, Occurrence
 from .recurrence import WEEKDAY_CODES, build_rrule, describe_rrule, parse_rrule
 
@@ -32,46 +37,39 @@ def _compact_minutes(m: int) -> str:
     return f"{m}m" if m else "0"
 
 
-def _modal(win: tk.Toplevel, parent: tk.Misc) -> None:
-    win.transient(parent.winfo_toplevel())
-    T.center(win, parent)
-    win.wait_visibility()
-    win.grab_set()
+def _show(dlg: QDialog, parent: QWidget) -> None:
+    dlg.setModal(True)
+    dlg.setWindowModality(Qt.WindowModality.WindowModal)
+    dlg.show()
+    dlg.raise_()
+    dlg.activateWindow()
 
 
-def ask_scope(parent: tk.Misc, verb: str) -> str | None:
+def ask_scope(parent: QWidget, verb: str) -> str | None:
     """'this' | 'all' | None (cancelled) for edits/deletes of a repeating event."""
-    dlg = tk.Toplevel(parent)
-    dlg.title(f"{verb} repeating event")
-    dlg.configure(bg=T.BG)
-    dlg.resizable(False, False)
-    result: dict[str, str | None] = {"v": None}
-
-    def pick(v: str) -> None:
-        result["v"] = v
-        dlg.destroy()
-
-    frm = ttk.Frame(dlg, padding=20)
-    frm.pack()
-    ttk.Label(frm, text=f"{verb} which events?", style="Title.TLabel").pack(anchor="w", pady=(0, 12))
-    ttk.Button(frm, text="Only this event", command=lambda: pick("this")).pack(fill="x", pady=3)
-    ttk.Button(frm, text="All events in the series", command=lambda: pick("all")).pack(fill="x", pady=3)
-    ttk.Button(frm, text="Cancel", command=dlg.destroy).pack(fill="x", pady=(10, 0))
-    dlg.bind("<Escape>", lambda _e: dlg.destroy())
-    _modal(dlg, parent)
-    dlg.wait_window()
-    return result["v"]
+    box = QMessageBox(parent)
+    box.setWindowTitle(f"{verb} repeating event")
+    box.setText(f"{verb} which events?")
+    this_button = box.addButton("Only this event", QMessageBox.ButtonRole.AcceptRole)
+    all_button = box.addButton("All events in the series", QMessageBox.ButtonRole.AcceptRole)
+    box.addButton(QMessageBox.StandardButton.Cancel)
+    box.setDefaultButton(this_button)
+    box.exec()
+    if box.clickedButton() is this_button:
+        return "this"
+    if box.clickedButton() is all_button:
+        return "all"
+    return None
 
 
-class EventDialog(tk.Toplevel):
-    def __init__(self, parent: tk.Misc, cal, event: Event | None = None, occurrence: Occurrence | None = None,
+class EventDialog(QDialog):
+    def __init__(self, parent: QWidget, cal, event: Event | None = None, occurrence: Occurrence | None = None,
                  start: datetime | None = None, end: datetime | None = None, all_day: bool = False):
         super().__init__(parent)
         self.cal, self.event, self.occ = cal, event, occurrence
-        self.title("Edit event" if event else "New event")
-        self.configure(bg=T.BG)
-        self.resizable(False, False)
-
+        self.setWindowTitle("Edit event" if event else "New event")
+        self.setModal(True)
+        self.setSizeGripEnabled(False)
         if event:
             s = occurrence.start if occurrence else event.start
             e = occurrence.end if occurrence else event.end
@@ -81,237 +79,202 @@ class EventDialog(tk.Toplevel):
             e = end or s + (timedelta(days=1) if all_day else timedelta(hours=1))
         self._start0 = s
         shown_end = (e - timedelta(days=1) if e > s else s) if all_day else e
-
-        self.title_var = tk.StringVar(value=event.title if event else "")
-        self.all_day_var = tk.BooleanVar(value=all_day)
-        self.sd, self.st = tk.StringVar(value=_date_text(s)), tk.StringVar(value=D.fmt_time(s))
-        self.ed, self.et = tk.StringVar(value=_date_text(shown_end)), tk.StringVar(value=D.fmt_time(shown_end))
-        self.loc_var = tk.StringVar(value=event.location if event else "")
+        root = QVBoxLayout(self)
+        form = QFormLayout()
+        root.addLayout(form)
+        self.title_entry = QLineEdit(event.title if event else "")
+        self.all_day = QCheckBox("All day")
+        self.all_day.setChecked(all_day)
+        self.sd, self.st = QLineEdit(_date_text(s)), QLineEdit(D.fmt_time(s))
+        self.ed, self.et = QLineEdit(_date_text(shown_end)), QLineEdit(D.fmt_time(shown_end))
+        self.loc = QLineEdit(event.location if event else "")
         reminders = event.reminders if event else ([] if all_day else [15])
-        self.rem_var = tk.StringVar(value=", ".join(_compact_minutes(m) for m in reminders))
+        self.rem = QLineEdit(", ".join(_compact_minutes(m) for m in reminders))
+        self.notes = QTextEdit()
+        self.notes.setFixedHeight(82)
+        if event:
+            self.notes.setPlainText(event.notes)
+        form.addRow("Title", self.title_entry)
 
-        frm = ttk.Frame(self, padding=20)
-        frm.pack()
-        self.frm = frm
-
-        def row_label(text: str, row: int) -> None:
-            ttk.Label(frm, text=text, style="Muted.TLabel").grid(row=row, column=0, sticky="ne", padx=(0, 14), pady=6)
-
-        row_label("Title", 0)
-        self.title_entry = ttk.Entry(frm, textvariable=self.title_var, width=48)
-        self.title_entry.grid(row=0, column=1, columnspan=3, sticky="ew")
-
-        # category
-        row_label("Category", 1)
-        self.cat_ids: dict[str, str | None] = {NO_CATEGORY: None}
+        self.cat_ids = {NO_CATEGORY: None}
         for c in cal.categories():
             self.cat_ids[c.name] = c.id
         current = cal.category(event.category_id) if event else None
-        self.cat_var = tk.StringVar(value=current.name if current else NO_CATEGORY)
-        combo = ttk.Combobox(frm, textvariable=self.cat_var, values=list(self.cat_ids), state="readonly", width=22)
-        combo.grid(row=1, column=1, columnspan=2, sticky="w")
-        self.swatch = tk.Label(frm, width=3, bg=DEFAULT_COLOR)
-        self.swatch.grid(row=1, column=3, sticky="w", padx=8)
-        combo.bind("<<ComboboxSelected>>", lambda _e: self._update_swatch())
-        self._update_swatch()
+        self.cat = QComboBox()
+        self.cat.addItems(list(self.cat_ids))
+        self.cat.setCurrentText(current.name if current else NO_CATEGORY)
+        cat_row = QWidget()
+        cat_layout = QHBoxLayout(cat_row)
+        cat_layout.setContentsMargins(0, 0, 0, 0)
+        cat_layout.addWidget(self.cat)
+        self.swatch = QLabel("   ")
+        self.swatch.setAutoFillBackground(True)
+        cat_layout.addWidget(self.swatch)
+        form.addRow("Category", cat_row)
+        form.addRow("", self.all_day)
+        form.addRow("Starts", self._date_time_row(self.sd, self.st))
+        form.addRow("Ends", self._date_time_row(self.ed, self.et))
+        self.st.setEnabled(not all_day)
+        self.et.setEnabled(not all_day)
+        self.all_day.toggled.connect(self._on_all_day)
+        self.cat.currentTextChanged.connect(self._update_swatch)
 
-        # when
-        ttk.Checkbutton(frm, text="All day", variable=self.all_day_var, command=self._on_all_day).grid(
-            row=2, column=1, columnspan=3, sticky="w", pady=(6, 0))
-        row_label("Starts", 3)
-        ttk.Entry(frm, textvariable=self.sd, width=13).grid(row=3, column=1, sticky="w", pady=3)
-        self.st_entry = ttk.Entry(frm, textvariable=self.st, width=10)
-        self.st_entry.grid(row=3, column=2, sticky="w", padx=(8, 0))
-        row_label("Ends", 4)
-        ttk.Entry(frm, textvariable=self.ed, width=13).grid(row=4, column=1, sticky="w", pady=3)
-        self.et_entry = ttk.Entry(frm, textvariable=self.et, width=10)
-        self.et_entry.grid(row=4, column=2, sticky="w", padx=(8, 0))
-
-        # repeat
-        row_label("Repeat", 5)
-        choices = REPEAT_CHOICES + ([CUSTOM] if event and event.rrule and parse_rrule(event.rrule).custom else [])
-        self.rep_var = tk.StringVar(value=NO_REPEAT)
-        rep = ttk.Combobox(frm, textvariable=self.rep_var, values=choices, state="readonly", width=22)
-        rep.grid(row=5, column=1, columnspan=2, sticky="w")
-        self.rep_note = ttk.Label(frm, text="", style="Muted.TLabel")
-        self.rep_note.grid(row=5, column=3, sticky="w", padx=8)
-        self._build_repeat_options(frm, row=6)
-        rep.bind("<<ComboboxSelected>>", lambda _e: self._on_repeat_change())
+        self.rep = QComboBox()
+        self.rep.addItems(REPEAT_CHOICES + ([CUSTOM] if event and event.rrule and parse_rrule(event.rrule).custom else []))
+        form.addRow("Repeat", self.rep)
+        self.rep_note = QLabel()
+        form.addRow("", self.rep_note)
+        self.interval = QSpinBox()
+        self.interval.setRange(1, 99)
+        self.interval.setValue(1)
+        self.week_days = {code: QCheckBox(label) for code, label in WEEK_ORDER}
+        days = QWidget()
+        days_layout = QHBoxLayout(days)
+        days_layout.setContentsMargins(0, 0, 0, 0)
+        for check in self.week_days.values():
+            days_layout.addWidget(check)
+        self.end_never, self.end_count, self.end_until = QRadioButton("Never"), QRadioButton("After"), QRadioButton("On")
+        self.end_never.setChecked(True)
+        self.count, self.until = QSpinBox(), QLineEdit()
+        self.count.setRange(1, 9999)
+        self.count.setValue(10)
+        repeat_box = QWidget()
+        repeat_layout = QVBoxLayout(repeat_box)
+        repeat_layout.setContentsMargins(0, 0, 0, 0)
+        every = QHBoxLayout()
+        every.addWidget(QLabel("Every"))
+        every.addWidget(self.interval)
+        self.unit = QLabel("day(s)")
+        every.addWidget(self.unit)
+        repeat_layout.addLayout(every)
+        repeat_layout.addWidget(days)
+        ends = QHBoxLayout()
+        ends.addWidget(self.end_never)
+        ends.addWidget(self.end_count)
+        ends.addWidget(self.count)
+        ends.addWidget(QLabel("times"))
+        ends.addWidget(self.end_until)
+        ends.addWidget(self.until)
+        repeat_layout.addLayout(ends)
+        form.addRow("", repeat_box)
+        self.repeat_box, self.days_widget = repeat_box, days
+        self.rep.currentTextChanged.connect(self._on_repeat_change)
         self._load_repeat(event.rrule if event else None)
+        form.addRow("Reminders", self.rem)
+        form.addRow("", QLabel("before the start, e.g. 15, 1h, 1d"))
+        form.addRow("Location", self.loc)
+        form.addRow("Notes", self.notes)
 
-        row_label("Reminders", 7)
-        ttk.Entry(frm, textvariable=self.rem_var, width=22).grid(row=7, column=1, columnspan=2, sticky="w", pady=3)
-        ttk.Label(frm, text="before the start, e.g. 15, 1h, 1d", style="Muted.TLabel").grid(
-            row=7, column=3, sticky="w", padx=8)
-        row_label("Location", 8)
-        ttk.Entry(frm, textvariable=self.loc_var, width=48).grid(row=8, column=1, columnspan=3, sticky="ew", pady=3)
-        row_label("Notes", 9)
-        self.notes = tk.Text(frm, width=48, height=4, wrap="word", relief="flat", highlightthickness=1,
-                             highlightbackground=T.LINE, highlightcolor=T.ACCENT, font=(T.FAMILY, 10), padx=6, pady=4)
-        self.notes.grid(row=9, column=1, columnspan=3, sticky="ew", pady=3)
+        buttons = QDialogButtonBox()
+        save = buttons.addButton("Save", QDialogButtonBox.ButtonRole.AcceptRole)
+        cancel = buttons.addButton(QDialogButtonBox.StandardButton.Cancel)
         if event:
-            self.notes.insert("1.0", event.notes)
+            delete = buttons.addButton("Delete", QDialogButtonBox.ButtonRole.DestructiveRole)
+            delete.clicked.connect(self._delete)
+        save.clicked.connect(self._save)
+        cancel.clicked.connect(self.reject)
+        root.addWidget(buttons)
+        shortcut = QShortcut(QKeySequence("Ctrl+Return"), self)
+        shortcut.activated.connect(self._save)
+        self.title_entry.returnPressed.connect(self._save)
+        self._on_repeat_change(self.rep.currentText())
+        self._update_swatch()
+        _show(self, parent)
+        self.title_entry.setFocus()
 
-        # buttons
-        btns = ttk.Frame(frm)
-        btns.grid(row=10, column=0, columnspan=4, sticky="ew", pady=(14, 0))
-        if event:
-            ttk.Button(btns, text="Delete", style="Danger.TButton", command=self._delete).pack(side="left")
-        ttk.Button(btns, text="Save", style="Accent.TButton", command=self._save).pack(side="right")
-        ttk.Button(btns, text="Cancel", command=self.destroy).pack(side="right", padx=8)
-
-        self.bind("<Escape>", lambda _e: self.destroy())
-        self.bind("<Control-Return>", lambda _e: self._save())
-        self.title_entry.bind("<Return>", lambda _e: self._save())
-        self._on_all_day()
-        self._on_repeat_change()
-        _modal(self, parent)
-        self.title_entry.focus_set()
-        self.title_entry.select_range(0, "end")
-
-    # ---- repeat controls ------------------------------------------------------------------
-    def _build_repeat_options(self, frm: ttk.Frame, row: int) -> None:
-        self.rep_opts = opts = ttk.Frame(frm)
-        opts.grid(row=row, column=1, columnspan=3, sticky="w", pady=(2, 4))
-        self.interval_var, self.count_var = tk.StringVar(value="1"), tk.StringVar(value="10")
-        self.until_var, self.end_mode = tk.StringVar(), tk.StringVar(value="never")
-        self.day_vars = {code: tk.BooleanVar() for code, _ in WEEK_ORDER}
-
-        every = ttk.Frame(opts)
-        every.grid(row=0, column=0, sticky="w")
-        ttk.Label(every, text="Every").pack(side="left")
-        ttk.Spinbox(every, from_=1, to=99, width=4, textvariable=self.interval_var).pack(side="left", padx=6)
-        self.unit_lbl = ttk.Label(every, text="week(s)")
-        self.unit_lbl.pack(side="left")
-
-        self.days_frame = ttk.Frame(opts)
-        self.days_frame.grid(row=1, column=0, sticky="w", pady=4)
-        for code, label in WEEK_ORDER:
-            ttk.Checkbutton(self.days_frame, text=label, variable=self.day_vars[code]).pack(side="left", padx=(0, 6))
-
-        ends = ttk.Frame(opts)
-        ends.grid(row=2, column=0, sticky="w")
-        ttk.Label(ends, text="Ends").pack(side="left", padx=(0, 6))
-        ttk.Radiobutton(ends, text="Never", value="never", variable=self.end_mode).pack(side="left", padx=(0, 8))
-        ttk.Radiobutton(ends, text="After", value="count", variable=self.end_mode).pack(side="left")
-        ttk.Entry(ends, textvariable=self.count_var, width=4).pack(side="left", padx=4)
-        ttk.Label(ends, text="times").pack(side="left", padx=(0, 8))
-        ttk.Radiobutton(ends, text="On", value="until", variable=self.end_mode).pack(side="left")
-        ttk.Entry(ends, textvariable=self.until_var, width=11).pack(side="left", padx=4)
+    @staticmethod
+    def _date_time_row(day: QLineEdit, clock: QLineEdit) -> QWidget:
+        w = QWidget()
+        row = QHBoxLayout(w)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.addWidget(day)
+        row.addWidget(clock)
+        return w
 
     def _load_repeat(self, rule: str | None) -> None:
         if not rule:
             return
         p = parse_rrule(rule)
         if p.custom:
-            self.rep_var.set(CUSTOM)
-            self.rep_note.config(text=describe_rrule(rule))
+            self.rep.setCurrentText(CUSTOM)
+            self.rep_note.setText(describe_rrule(rule))
             return
-        self.rep_var.set(CHOICE_OF[p.freq])
-        self.interval_var.set(str(p.interval))
+        self.rep.setCurrentText(CHOICE_OF[p.freq])
+        self.interval.setValue(p.interval)
         for code in p.byday:
-            self.day_vars[code].set(True)
+            if code in self.week_days:
+                self.week_days[code].setChecked(True)
         if p.count:
-            self.end_mode.set("count")
-            self.count_var.set(str(p.count))
+            self.end_count.setChecked(True)
+            self.count.setValue(p.count)
         elif p.until:
-            self.end_mode.set("until")
-            self.until_var.set(f"{p.until.month}/{p.until.day}/{p.until.year}")
+            self.end_until.setChecked(True)
+            self.until.setText(f"{p.until.month}/{p.until.day}/{p.until.year}")
 
-    def _on_repeat_change(self) -> None:
-        choice = self.rep_var.get()
-        if choice in (NO_REPEAT, CUSTOM):
-            self.rep_opts.grid_remove()
-            return
-        self.rep_opts.grid()
-        self.unit_lbl.config(text=UNIT_OF[choice])
-        if choice == "Weekly":
-            self.days_frame.grid()
-            if not any(v.get() for v in self.day_vars.values()):
-                try:
-                    start = D.parse_date(self.sd.get())
-                except ValueError:
-                    start = self._start0.date()
-                self.day_vars[WEEKDAY_CODES[start.weekday()]].set(True)
-        else:
-            self.days_frame.grid_remove()
+    def _on_repeat_change(self, choice: str) -> None:
+        enabled = choice not in (NO_REPEAT, CUSTOM)
+        self.repeat_box.setVisible(enabled)
+        self.unit.setText(UNIT_OF.get(choice, ""))
+        self.days_widget.setVisible(choice == "Weekly")
+        if choice == "Weekly" and not any(v.isChecked() for v in self.week_days.values()):
+            try:
+                start = D.parse_date(self.sd.text())
+            except ValueError:
+                start = self._start0.date()
+            self.week_days[WEEKDAY_CODES[start.weekday()]].setChecked(True)
 
-    def _on_all_day(self) -> None:
-        state = ["disabled"] if self.all_day_var.get() else ["!disabled"]
-        self.st_entry.state(state)
-        self.et_entry.state(state)
+    def _on_all_day(self, checked: bool) -> None:
+        self.st.setEnabled(not checked)
+        self.et.setEnabled(not checked)
 
-    def _update_swatch(self) -> None:
-        cat = self.cal.category(self.cat_ids.get(self.cat_var.get()))
-        self.swatch.config(bg=cat.color if cat else DEFAULT_COLOR)
+    def _update_swatch(self, *_args) -> None:
+        cat = self.cal.category(self.cat_ids.get(self.cat.currentText()))
+        self.swatch.setStyleSheet(f"background-color: {cat.color if cat else DEFAULT_COLOR}; border: 1px solid #888")
 
-    # ---- reading the form ---------------------------------------------------------------------
     def _collect(self) -> dict:
-        title = self.title_var.get().strip()
+        title = self.title_entry.text().strip()
         if not title:
             raise ValueError("Give the event a title.")
-        all_day = self.all_day_var.get()
-        sd, ed = D.parse_date(self.sd.get()), D.parse_date(self.ed.get())
+        all_day = self.all_day.isChecked()
+        sd, ed = D.parse_date(self.sd.text()), D.parse_date(self.ed.text())
         if all_day:
             start, end = D.day_start(sd), D.day_start(ed) + timedelta(days=1)
             if end <= start:
                 raise ValueError("The end date is before the start date.")
         else:
-            start = datetime.combine(sd, D.parse_time(self.st.get()))
-            end = datetime.combine(ed, D.parse_time(self.et.get()))
+            start = datetime.combine(sd, D.parse_time(self.st.text()))
+            end = datetime.combine(ed, D.parse_time(self.et.text()))
             if end < start:
                 raise ValueError("The event ends before it starts.")
-        return {
-            "title": title, "start": start, "end": end, "all_day": all_day,
-            "category_id": self.cat_ids.get(self.cat_var.get()),
-            "location": self.loc_var.get().strip(),
-            "notes": self.notes.get("1.0", "end").strip(),
-            "reminders": D.parse_minute_list(self.rem_var.get()),
-            "rrule": self._collect_rrule(start),
-        }
+        return {"title": title, "start": start, "end": end, "all_day": all_day,
+                "category_id": self.cat_ids.get(self.cat.currentText()), "location": self.loc.text().strip(),
+                "notes": self.notes.toPlainText().strip(), "reminders": D.parse_minute_list(self.rem.text()),
+                "rrule": self._collect_rrule(start)}
 
     def _collect_rrule(self, start: datetime) -> str | None:
-        choice = self.rep_var.get()
+        choice = self.rep.currentText()
         if choice == NO_REPEAT:
             return None
         if choice == CUSTOM:
             return self.event.rrule
-        try:
-            interval = int(self.interval_var.get())
-            if interval < 1:
-                raise ValueError
-        except ValueError:
-            raise ValueError("'Every' needs a whole number, 1 or more.") from None
-        byday = []
-        if choice == "Weekly":
-            byday = [c for c, _ in WEEK_ORDER if self.day_vars[c].get()] or [WEEKDAY_CODES[start.weekday()]]
-        count = until = None
-        mode = self.end_mode.get()
-        if mode == "count":
-            try:
-                count = int(self.count_var.get())
-                if count < 1:
-                    raise ValueError
-            except ValueError:
-                raise ValueError("'After … times' needs a whole number, 1 or more.") from None
-        elif mode == "until":
-            until = D.parse_date(self.until_var.get())
-            if until < start.date():
-                raise ValueError("The repeat end date is before the event starts.")
+        interval = self.interval.value()
+        byday = [c for c, _ in WEEK_ORDER if self.week_days[c].isChecked()] if choice == "Weekly" else []
+        if choice == "Weekly" and not byday:
+            byday = [WEEKDAY_CODES[start.weekday()]]
+        count = self.count.value() if self.end_count.isChecked() else None
+        until = D.parse_date(self.until.text()) if self.end_until.isChecked() else None
+        if until and until < start.date():
+            raise ValueError("The repeat end date is before the event starts.")
         return build_rrule(FREQ_OF[choice], interval, byday, count, until)
 
-    # ---- actions ------------------------------------------------------------------------------
     def _scope(self, verb: str) -> str | None:
-        scope = ask_scope(self, verb)
-        if self.winfo_exists():
-            self.grab_set()  # the sub-dialog released our grab when it closed
-        return scope
+        return ask_scope(self, verb)
 
     def _save(self) -> None:
         try:
             data = self._collect()
         except ValueError as exc:
-            messagebox.showerror("Check the event details", str(exc), parent=self)
+            QMessageBox.critical(self, "Check the event details", str(exc))
             return
         ev = self.event
         if ev is None:
@@ -329,14 +292,14 @@ class EventDialog(tk.Toplevel):
             if scope == "this":
                 fields = {k: v for k, v in data.items() if k != "rrule"}
                 self.cal.detach_occurrence(ev.id, occ_start, fields)
-            else:  # "all": shift the whole series by however far this occurrence moved
+            else:
                 delta = data["start"] - occ_start
                 master = ev.copy()
                 master.start = ev.start + delta
                 master.exdates = [x + delta for x in ev.exdates]
                 data = {**data, "end": master.start + (data["end"] - data["start"]), "start": master.start}
                 self._apply(master, data)
-        self.destroy()
+        self.accept()
 
     def _apply(self, ev: Event, data: dict) -> None:
         for key, value in data.items():
@@ -346,7 +309,7 @@ class EventDialog(tk.Toplevel):
     def _delete(self) -> None:
         ev = self.event
         if not ev.is_recurring:
-            if not messagebox.askyesno("Delete event", f"Delete “{ev.title}”?", parent=self):
+            if QMessageBox.question(self, "Delete event", f"Delete “{ev.title}”?") != QMessageBox.StandardButton.Yes:
                 return
             self.cal.delete_event(ev.id)
         else:
@@ -357,48 +320,48 @@ class EventDialog(tk.Toplevel):
                 self.cal.delete_event(ev.id)
             else:
                 return
-        self.destroy()
+        self.accept()
 
 
-class CategoryDialog(tk.Toplevel):
-    """Rename, recolour, add and delete categories. Nothing is saved until you press Save."""
+class CategoryDialog(QDialog):
+    """Rename, recolour, add and delete categories; nothing is saved until Save."""
 
-    def __init__(self, parent: tk.Misc, cal):
+    def __init__(self, parent: QWidget, cal):
         super().__init__(parent)
         self.cal = cal
-        self.title("Categories")
-        self.configure(bg=T.BG)
-        self.resizable(False, False)
+        self.setWindowTitle("Categories")
         self.rows: list[dict] = []
         self.removed: list[str] = []
-
-        frm = ttk.Frame(self, padding=20)
-        frm.pack()
-        ttk.Label(frm, text="Categories", style="Title.TLabel").pack(anchor="w")
-        ttk.Label(frm, text="Click a colour to change it. Events in a deleted category become uncategorised.",
-                  style="Muted.TLabel").pack(anchor="w", pady=(2, 10))
-        self.list_frame = ttk.Frame(frm)
-        self.list_frame.pack(fill="x")
+        root = QVBoxLayout(self)
+        root.addWidget(QLabel("Categories"))
+        root.addWidget(QLabel("Click a colour to change it. Events in a deleted category become uncategorised."))
+        self.list_layout = QVBoxLayout()
+        root.addLayout(self.list_layout)
         for cat in cal.categories():
             self._add_row(cat)
-        ttk.Button(frm, text="Add category", command=self._add_new).pack(anchor="w", pady=(10, 0))
-        btns = ttk.Frame(frm)
-        btns.pack(fill="x", pady=(14, 0))
-        ttk.Button(btns, text="Save", style="Accent.TButton", command=self._save).pack(side="right")
-        ttk.Button(btns, text="Cancel", command=self.destroy).pack(side="right", padx=8)
-        self.bind("<Escape>", lambda _e: self.destroy())
-        _modal(self, parent)
+        add = QPushButton("Add category")
+        add.clicked.connect(self._add_new)
+        root.addWidget(add, alignment=Qt.AlignmentFlag.AlignLeft)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(self._save)
+        buttons.rejected.connect(self.reject)
+        root.addWidget(buttons)
+        _show(self, parent)
 
     def _add_row(self, cat: Category) -> None:
-        frame = ttk.Frame(self.list_frame)
-        frame.pack(fill="x", pady=3)
-        row = {"id": cat.id, "name": tk.StringVar(value=cat.name), "color": cat.color, "frame": frame}
-        swatch = tk.Label(frame, width=4, bg=cat.color, cursor="hand2")
-        swatch.pack(side="left", padx=(0, 10))
-        swatch.bind("<Button-1>", lambda _e, r=row, s=swatch: self._pick(r, s))
-        ttk.Entry(frame, textvariable=row["name"], width=28).pack(side="left")
-        ttk.Button(frame, text="Delete", style="Danger.TButton", command=lambda r=row: self._remove(r)).pack(
-            side="left", padx=8)
+        frame = QWidget()
+        layout = QHBoxLayout(frame)
+        layout.setContentsMargins(0, 0, 0, 0)
+        swatch = QPushButton("   ")
+        swatch.setStyleSheet(f"background-color: {cat.color}")
+        row = {"id": cat.id, "name": QLineEdit(cat.name), "color": cat.color, "frame": frame, "swatch": swatch}
+        swatch.clicked.connect(lambda _=False, r=row: self._pick(r))
+        layout.addWidget(swatch)
+        layout.addWidget(row["name"])
+        remove = QPushButton("Delete")
+        remove.clicked.connect(lambda _=False, r=row: self._remove(r))
+        layout.addWidget(remove)
+        self.list_layout.addWidget(frame)
         self.rows.append(row)
 
     def _add_new(self) -> None:
@@ -406,76 +369,67 @@ class CategoryDialog(tk.Toplevel):
         self._add_row(Category(new_id("cat"), "New category", color))
         self.rows[-1]["new"] = True
 
-    def _pick(self, row: dict, swatch: tk.Label) -> None:
-        _rgb, hexval = colorchooser.askcolor(color=row["color"], parent=self, title="Category colour")
-        if hexval:
-            row["color"] = hexval
-            swatch.config(bg=hexval)
+    def _pick(self, row: dict) -> None:
+        color = QColorDialog.getColor(QColor(row["color"]), self, "Category colour")
+        if color.isValid():
+            row["color"] = color.name()
+            row["swatch"].setStyleSheet(f"background-color: {row['color']}")
 
     def _remove(self, row: dict) -> None:
         if not row.get("new"):
             self.removed.append(row["id"])
-        row["frame"].destroy()
+        row["frame"].deleteLater()
         self.rows.remove(row)
 
     def _save(self) -> None:
-        names = [r["name"].get().strip() for r in self.rows]
+        names = [r["name"].text().strip() for r in self.rows]
         if any(not n for n in names):
-            return messagebox.showerror("Check the categories", "Every category needs a name.", parent=self)
+            QMessageBox.critical(self, "Check the categories", "Every category needs a name.")
+            return
         if len({n.lower() for n in names}) != len(names):
-            return messagebox.showerror("Check the categories", "Two categories have the same name.", parent=self)
+            QMessageBox.critical(self, "Check the categories", "Two categories have the same name.")
+            return
         with self.cal.api.vault.batch():
             for cat_id in self.removed:
                 self.cal.delete_category(cat_id)
             for row, name in zip(self.rows, names, strict=False):
                 self.cal.save_category(Category(row["id"], name, row["color"]))
-        self.destroy()
-        return None
+        self.accept()
 
 
-class ReadOnlyEventDialog(tk.Toplevel):
-    """Shows everything about an event that comes from a calendar link. Nothing here can be changed."""
+class ReadOnlyEventDialog(QDialog):
+    """Shows an event from a calendar link without allowing changes."""
 
-    def __init__(self, parent: tk.Misc, cal, event: Event, occurrence: Occurrence | None = None):
+    def __init__(self, parent: QWidget, cal, event: Event, occurrence: Occurrence | None = None):
         super().__init__(parent)
-        self.title(event.title)
-        self.configure(bg=T.BG)
-        self.resizable(False, False)
+        self.setWindowTitle(event.title)
+        root = QVBoxLayout(self)
         start = occurrence.start if occurrence else event.start
         end = occurrence.end if occurrence else event.end
         when = (f"{D.fmt_date_long(start.date())} · all day" if event.all_day else
                 f"{D.fmt_date_long(start.date())}\n{D.fmt_time(start)} – {D.fmt_time(end)}")
         source = next((s for s in cal.subscriptions() if s.id == event.source), None)
         category = cal.category(event.category_id)
-
-        frm = ttk.Frame(self, padding=(28, 24, 28, 20))
-        frm.pack()
-        ttk.Label(frm, text=event.title, style="Display.TLabel", wraplength=460).pack(anchor="w")
-        ttk.Label(frm, text=when, style="Muted.TLabel", justify="left").pack(anchor="w", pady=(8, 0))
+        for text in (event.title, when):
+            label = QLabel(text)
+            label.setWordWrap(True)
+            root.addWidget(label)
         if event.rrule:
-            ttk.Label(frm, text=describe_rrule(event.rrule), style="Muted.TLabel").pack(anchor="w")
-        rows = []
-        if event.location:
-            rows.append(("Where", event.location))
-        if category:
-            rows.append(("Category", category.name))
-        if event.reminders:
-            rows.append(("Reminders", ", ".join(D.fmt_minutes(m) for m in event.reminders) + " before"))
-        for label, value in rows:
-            line = ttk.Frame(frm)
-            line.pack(anchor="w", pady=(14, 0), fill="x")
-            ttk.Label(line, text=label, style="Muted.TLabel", width=11).pack(side="left", anchor="n")
-            ttk.Label(line, text=value, wraplength=380, justify="left").pack(side="left", anchor="w")
+            root.addWidget(QLabel(describe_rrule(event.rrule)))
+        for label, value in (("Where", event.location), ("Category", category.name if category else ""),
+                             ("Reminders", ", ".join(D.fmt_minutes(m) for m in event.reminders) + " before"
+                              if event.reminders else "")):
+            if value:
+                root.addWidget(QLabel(f"{label}: {value}"))
         if event.notes:
-            ttk.Label(frm, text="Notes", style="Muted.TLabel").pack(anchor="w", pady=(16, 2))
-            ttk.Label(frm, text=event.notes, wraplength=460, justify="left").pack(anchor="w")
-
+            notes = QLabel(f"Notes\n{event.notes}")
+            notes.setWordWrap(True)
+            root.addWidget(notes)
         name = f"“{source.name}”" if source else "a calendar link"
-        ttk.Label(frm, text=f"From {name}. It refreshes automatically, so changes are made in the source calendar.",
-                  style="Muted.TLabel", wraplength=460, justify="left").pack(anchor="w", pady=(20, 0))
-        btns = ttk.Frame(frm)
-        btns.pack(fill="x", pady=(16, 0))
-        ttk.Button(btns, text="Close", style="Accent.TButton", command=self.destroy).pack(side="right")
-        self.bind("<Escape>", lambda _e: self.destroy())
-        self.bind("<Return>", lambda _e: self.destroy())
-        _modal(self, parent)
+        detail = QLabel(f"From {name}. It refreshes automatically, so changes are made in the source calendar.")
+        detail.setWordWrap(True)
+        root.addWidget(detail)
+        close = QPushButton("Close")
+        close.clicked.connect(self.accept)
+        root.addWidget(close, alignment=Qt.AlignmentFlag.AlignRight)
+        _show(self, parent)

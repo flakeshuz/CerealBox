@@ -1,17 +1,17 @@
 """Taxes UI scaffold"""
 from __future__ import annotations
 
-from tkinter import ttk
+from PyQt6.QtWidgets import QLabel, QTreeWidget, QVBoxLayout, QWidget
 
-from ...ui.components import page_header
 
-class TaxesView(ttk.Frame):
+class TaxesView(QWidget):
     def __init__(self, parent, mod):
         super().__init__(parent)
         self.mod = mod
-        page_header(self, "Taxes")
-        self.tree = ttk.Treeview(self, columns=("name","rate"), show="headings")
-        self.tree.heading("name", text="Category")
-        self.tree.heading("rate", text="Rate")
-        self.tree.pack(fill="both", expand=True, pady=4)
-        # Minimal UI: scaffold
+
+        layout = QVBoxLayout(self)
+        layout.addWidget(QLabel("Taxes"))
+        self.tree = QTreeWidget(self)
+        self.tree.setColumnCount(2)
+        self.tree.setHeaderLabels(["Category", "Rate"])
+        layout.addWidget(self.tree)

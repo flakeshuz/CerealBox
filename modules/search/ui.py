@@ -1,26 +1,40 @@
 """Search UI scaffold"""
 from __future__ import annotations
 
-import tkinter as tk
-from tkinter import ttk
+from PyQt6.QtWidgets import (
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QListWidget,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
-from ...ui.components import configure_listbox, page_header
 
-class SearchView(ttk.Frame):
+class SearchView(QWidget):
     def __init__(self, parent, mod):
         super().__init__(parent)
         self.mod = mod
-        header, actions = page_header(self, "Search")
-        self.entry = ttk.Entry(self)
-        self.entry.pack(fill="x", padx=24, pady=(4, 8))
-        self.btn = ttk.Button(actions, text="Search", style="Accent.TButton", command=self.run)
-        self.btn.pack(side="left")
-        self.results = tk.Listbox(self)
-        configure_listbox(self.results)
-        self.results.pack(fill="both", expand=True, padx=24, pady=(4, 24))
+
+        layout = QVBoxLayout(self)
+        heading = QHBoxLayout()
+        heading.addWidget(QLabel("Search"))
+        heading.addStretch()
+        self.btn = QPushButton("Search")
+        self.btn.clicked.connect(self.run)
+        heading.addWidget(self.btn)
+        layout.addLayout(heading)
+
+        self.entry = QLineEdit(self)
+        self.entry.returnPressed.connect(self.run)
+        layout.addWidget(self.entry)
+        self.results = QListWidget()
+        layout.addWidget(self.results)
+
     def run(self):
-        term = self.entry.get()
-        res = self.mod.global_search(term)
-        self.results.delete(0, tk.END)
-        for r in (res or []):
-            self.results.insert(tk.END, str(r))
+        term = self.entry.text()
+        results = self.mod.global_search(term)
+        self.results.clear()
+        for result in (results or []):
+            self.results.addItem(str(result))

@@ -1,37 +1,29 @@
 """Shared UI building blocks used across CerealBox screens."""
 from __future__ import annotations
 
-import tkinter as tk
-from tkinter import ttk
+from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QListWidget, QVBoxLayout, QWidget
 
 from . import theme as T
 
 
-def page_header(parent: tk.Misc, title: str) -> tuple[ttk.Frame, ttk.Frame]:
-    header = ttk.Frame(parent, style="Page.TFrame", padding=(24, 16, 24, 10))
-    header.pack(fill="x")
-    ttk.Label(header, text=title, style="Title.TLabel").pack(side="left")
-    actions = ttk.Frame(header, style="Page.TFrame")
-    actions.pack(side="right")
-    return header, actions
+def page_header(parent: QWidget, title: str) -> tuple[QFrame, QHBoxLayout]:
+    header = QFrame(parent)
+    layout = QHBoxLayout(header)
+    layout.setContentsMargins(0, 0, 0, 8)
+    label = QLabel(title, header)
+    label.setObjectName("pageTitle")
+    layout.addWidget(label)
+    layout.addStretch(1)
+    return header, layout
 
 
-def page_surface(parent: tk.Misc) -> ttk.Frame:
-    surface = ttk.Frame(parent, style="Surface.TFrame", padding=(24, 18))
-    surface.pack(fill="both", expand=True)
+def page_surface(parent: QWidget) -> QFrame:
+    surface = QFrame(parent)
+    surface.setObjectName("pageSurface")
+    surface.setStyleSheet(f"QFrame#pageSurface {{ background: {T.SURFACE}; border-radius: 8px; }}")
     return surface
 
 
-def configure_listbox(widget: tk.Listbox) -> None:
-    widget.configure(
-        relief="flat",
-        bd=0,
-        highlightthickness=1,
-        highlightbackground=T.LINE,
-        highlightcolor=T.ACCENT,
-        background=T.SURFACE,
-        foreground=T.INK,
-        selectbackground=T.ACCENT_SOFT,
-        selectforeground=T.ACCENT_INK,
-        activestyle="dotbox",
-    )
+def configure_listbox(widget: QListWidget) -> None:
+    widget.setAlternatingRowColors(True)
+    widget.setUniformItemSizes(True)

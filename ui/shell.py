@@ -1,14 +1,27 @@
-"""The main window: one tab per module, a File menu for vault-wide actions, and reminder popups."""
+"""Qt application window, workspace navigation, and vault-wide actions."""
 from __future__ import annotations
 
-import contextlib
 import logging
-import os
 import re
-import tkinter as tk
 from datetime import datetime, timedelta
 from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
+
+from PyQt6.QtCore import QTimer, Qt
+from PyQt6.QtGui import QAction, QKeySequence
+from PyQt6.QtWidgets import (
+    QApplication,
+    QDialog,
+    QDialogButtonBox,
+    QFileDialog,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QMainWindow,
+    QMessageBox,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 from ..core import LifeAPI, Reminder
 from ..core import dates as D
@@ -22,41 +35,40 @@ log = logging.getLogger("cerealbox")
 POLL_MS = 15_000
 SYNC_CHECK_MS = 5_000
 CHECKPOINT_EVERY = timedelta(minutes=10)
-MAX_CATCH_UP = timedelta(hours=12)  # reminders missed while the app was closed, at most this far back
+MAX_CATCH_UP = timedelta(hours=12)
 
 
-class Shell(tk.Tk):
+class Shell(QMainWindow):
     def __init__(self, vault_path: Path):
         super().__init__()
-        self.withdraw()
-        T.apply(self)
-        self.title("CerealBox")
+        self.setWindowTitle("CerealBox")
+        self.setMinimumSize(820, 540)
         self.vault_path = Path(vault_path)
         self.api: LifeAPI | None = None
-        self._rem_win: tk.Toplevel | None = None
-        self._rem_list: ttk.Frame | None = None
-        self._jobs: dict[str, str] = {}  # the shell's pending timers, by name
+        self._rem_win: QDialog | None = None
+        self._rem_list: QVBoxLayout | None = None
+        self._jobs: dict[str, QTimer] = {}
+        self._pages: dict[str, QWidget] = {}
+        self._titles: list[str] = []
 
-    def destroy(self) -> None:
-        for job in self._jobs.values():  # the shell's own timers; views clean up their own
-            with contextlib.suppress(tk.TclError):
-                self.after_cancel(job)
+    def closeEvent(self, event) -> None:
+        for timer in self._jobs.values():
+            timer.stop()
         if self.api is not None:
             try:
-                self.api.set_setting("core.geometry", self.geometry())  # remember the window size and place
+                rect = self.geometry()
+                self.api.set_setting("core.geometry", f"{rect.width()}x{rect.height()}{rect.x():+d}{rect.y():+d}")
             except Exception:
                 log.exception("Could not save window geometry")
             try:
                 self._checkpoint()
             except Exception:
                 log.exception("Could not save reminder checkpoint")
-        super().destroy()
+        event.accept()
 
-    # ---- startup -----------------------------------------------------------------------
     def start(self) -> bool:
         vault = unlock_vault(self, self.vault_path)
         if vault is None:
-            self.destroy()
             return False
         api = LifeAPI(vault)
         for module in default_modules():
@@ -65,232 +77,277 @@ class Shell(tk.Tk):
         return True
 
     def attach(self, api: LifeAPI) -> None:
-        """Build the UI around an already-open API (also used by tests)."""
+        """Build the workspace around an already-open API."""
         self.api = api
-        geom = api.setting("core.geometry")
-        screen_width, screen_height = self.winfo_screenwidth(), self.winfo_screenheight()
-        max_width, max_height = max(1, screen_width - 32), max(1, screen_height - 80)
+        modules = list(api.modules.values())
+        self._titles = [module.title for module in modules]
+        self._pages = {}
+
+        central = QWidget(self)
+        root = QHBoxLayout(central)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+        self.sidebar = Sidebar(self, self._titles, self._select_index)
+        root.addWidget(self.sidebar)
+
+        workspace = QWidget(central)
+        work_layout = QVBoxLayout(workspace)
+        work_layout.setContentsMargins(22, 14, 22, 0)
+        work_layout.setSpacing(0)
+
+        header = QFrame(workspace)
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(2, 0, 2, 12)
+        self._page_title = QLabel("Today")
+        self._page_title.setObjectName("pageTitle")
+        header_layout.addWidget(self._page_title)
+        header_layout.addStretch(1)
+        self._date_label = QLabel(datetime.now().strftime("%A, %B %d"))
+        self._date_label.setObjectName("muted")
+        header_layout.addWidget(self._date_label)
+        self._new_event_button = self._button("+ Event", lambda: self._on_request(action="new_event"))
+        self._new_task_button = self._button("+ Task", lambda: self._on_request(action="new_task"), primary=True)
+        header_layout.addWidget(self._new_event_button)
+        header_layout.addWidget(self._new_task_button)
+        work_layout.addWidget(header)
+
+        self.nb = Pager(workspace)
+        for module in modules:
+            view = module.create_view(self.nb)
+            if view is None:
+                continue
+            if not isinstance(view, QWidget):
+                raise TypeError(f"{module.name}.create_view() must return a PyQt6 QWidget.")
+            self.nb.add(view, text=module.title)
+            self._pages[module.title] = view
+        if self.nb.count() == 0:
+            raise RuntimeError("No workspace screens are available.")
+        work_layout.addWidget(self.nb, 1)
+        root.addWidget(workspace, 1)
+        self.setCentralWidget(central)
+
+        self._build_menu()
+        self.statusBar().showMessage("Local and encrypted")
+        self.nb.currentChanged.connect(self._sync_sidebar)
+        self.sidebar.set_active(0)
+        self._sync_sidebar()
+
+        saved = api.setting("core.geometry")
+        screen = QApplication.primaryScreen()
+        available = screen.availableGeometry() if screen else self.geometry()
+        max_width, max_height = max(1, available.width()), max(1, available.height())
         min_width, min_height = min(900, max_width), min(560, max_height)
-        self.minsize(min_width, min_height)
-        saved = re.fullmatch(r"(\d+)x(\d+)([+-]\d+)([+-]\d+)", geom or "")
-        if saved:
-            width = max(min_width, min(int(saved.group(1)), max_width))
-            height = max(min_height, min(int(saved.group(2)), max_height))
-            x = max(0, min(int(saved.group(3)), screen_width - width))
-            y = max(0, min(int(saved.group(4)), screen_height - height))
-            self.geometry(f"{width}x{height}{x:+d}{y:+d}")
+        self.setMinimumSize(min_width, min_height)
+        match = re.fullmatch(r"(\d+)x(\d+)([+-]\d+)([+-]\d+)", saved or "")
+        if match:
+            width = max(min_width, min(int(match.group(1)), max_width))
+            height = max(min_height, min(int(match.group(2)), max_height))
+            x = max(available.left(), min(int(match.group(3)), available.right() - width + 1))
+            y = max(available.top(), min(int(match.group(4)), available.bottom() - height + 1))
+            self.setGeometry(x, y, width, height)
         else:
             width, height = min(1180, max_width), min(780, max_height)
-            x, y = max(0, (screen_width - width) // 2), max(0, (screen_height - height) // 2)
-            self.geometry(f"{width}x{height}+{x}+{y}")
-        self._bind_keys()
-        self._status = ttk.Label(self, text="", style="Status.TLabel", anchor="w")
-        workspace = ttk.Frame(self)
-        header = ttk.Frame(workspace, style="Page.TFrame", padding=(24, 16))
-        header.pack(fill="x")
-        self._page_title = ttk.Label(header, text="Today", style="Title.TLabel")
-        self._page_title.pack(side="left")
-        ttk.Button(header, text="+ Task", command=lambda: self._on_request(action="new_task")).pack(side="right", padx=4)
-        ttk.Button(header, text="+ Event", command=lambda: self._on_request(action="new_event")).pack(side="right", padx=4)
-        ttk.Label(header, text=datetime.now().strftime("%A, %B %d"), style="Muted.TLabel").pack(side="right", padx=18)
-        ttk.Separator(workspace).pack(fill="x")
-        self.nb = Pager(workspace)
-        for module in api.modules.values():
-            view = module.create_view(self.nb)
-            if view is not None:
-                self.nb.add(view, text=module.title)
-        self._build_menu()
-        titles = [self.nb.tab(t, "text") for t in self.nb.tabs()]
-        self.sidebar = Sidebar(self, titles, self._select_index)
-        self._status.pack(side="bottom", fill="x")
-        self.sidebar.pack(side="left", fill="y")
-        workspace.pack(side="left", fill="both", expand=True)
-        self.nb.pack(fill="both", expand=True)
-        self.nb.bind("<<NotebookTabChanged>>", lambda _e: self._sync_sidebar())
-        self._sync_sidebar()
-        saved = api.setting("core.last_reminder_check")
+            self.resize(width, height)
+            self.move(available.center() - self.rect().center())
+
+        saved_check = api.setting("core.last_reminder_check")
         now = D.now()
-        self._last_check = max(D.from_iso(saved), now - MAX_CATCH_UP) if saved else now
+        self._last_check = max(D.from_iso(saved_check), now - MAX_CATCH_UP) if saved_check else now
         self._checkpoint_at = now
-        self._after("poll", 1500, self._poll_reminders)
-        self._after("sync", 4000, self._sync_tick)
+        self._schedule("poll", 1500, self._poll_reminders)
+        self._schedule("sync", 4000, self._sync_tick)
         api.on("ui.request", self._on_request)
         api.on("calendar.synced", self._on_synced)
-        self.protocol("WM_DELETE_WINDOW", self.destroy)
-        self.deiconify()
-        # Apply density from settings if available
-        try:
-            density = api.setting("ui.density", "comfortable")
-            from .theme import set_density
-            set_density(self, density)
-        except Exception:
-            log.debug("Could not apply density from settings")
+        density = api.setting("ui.density", "comfortable")
+        T.set_density(self, density)
 
+    @staticmethod
+    def _button(text: str, callback, *, primary: bool = False) -> QPushButton:
+        button = QPushButton(text)
+        if primary:
+            button.setProperty("primary", True)
+            button.style().unpolish(button)
+            button.style().polish(button)
+        button.clicked.connect(callback)
+        return button
 
-    # ---- menu --------------------------------------------------------------------------
     def _build_menu(self) -> None:
-        bar = tk.Menu(self)
-        file = tk.Menu(bar, tearoff=False)
-        file.add_command(label="Save encrypted backup copy…", command=self._backup)
-        file.add_command(label="Export all data as JSON…", command=self._export_json)
-        file.add_command(label="Import data from JSON…", command=self._import_json)
-        file.add_separator()
-        file.add_command(label="Change password…", command=self._change_password)
-        file.add_separator()
-        file.add_command(label="Quit", command=self.destroy)
-        bar.add_cascade(label="File", menu=file)
-        view = tk.Menu(bar, tearoff=False)
-        titles = [self.nb.tab(tab, "text") for tab in self.nb.tabs()]
-        for i, name in enumerate(titles):
-            accelerator = f"Ctrl+{i + 1}" if i < 4 else ""
-            view.add_command(label="Today" if name == "Dashboard" else name, accelerator=accelerator,
-                             command=lambda n=i: self._select_index(n))
-        view.add_separator()
-        view.add_command(label="New item here", accelerator="Ctrl+N", command=self._new_here)
-        bar.add_cascade(label="View", menu=view)
-        helpm = tk.Menu(bar, tearoff=False)
-        helpm.add_command(label="Keyboard shortcuts", accelerator="F1", command=self.show_shortcuts)
-        bar.add_cascade(label="Help", menu=helpm)
-        # CerealBox appearance options
-        appearance = tk.Menu(bar, tearoff=False)
-        appearance.add_command(label="Comfortable spacing", command=lambda: self._set_density("comfortable"))
-        appearance.add_command(label="Compact spacing", command=lambda: self._set_density("dense"))
-        bar.add_cascade(label="Appearance", menu=appearance)
-        self.config(menu=bar)
+        file_menu = self.menuBar().addMenu("&File")
+        self._action(file_menu, "Save encrypted backup copy…", self._backup)
+        self._action(file_menu, "Export all data as JSON…", self._export_json)
+        self._action(file_menu, "Import data from JSON…", self._import_json)
+        file_menu.addSeparator()
+        self._action(file_menu, "Change password…", self._change_password)
+        file_menu.addSeparator()
+        self._action(file_menu, "Quit", self.close, "Ctrl+Q")
+
+        view_menu = self.menuBar().addMenu("&View")
+        for index, name in enumerate(self._titles):
+            label = "Today" if name == "Dashboard" else name
+            shortcut = f"Ctrl+{index + 1}" if index < 4 else None
+            self._action(view_menu, label, lambda n=index: self._select_index(n), shortcut)
+        view_menu.addSeparator()
+        self._action(view_menu, "New item here", self._new_here, "Ctrl+N")
+        self._action(view_menu, "Find a workspace", self._focus_navigation, "Ctrl+K")
+
+        appearance = self.menuBar().addMenu("&Appearance")
+        self._action(appearance, "Comfortable spacing", lambda: self._set_density("comfortable"))
+        self._action(appearance, "Compact spacing", lambda: self._set_density("dense"))
+
+        help_menu = self.menuBar().addMenu("&Help")
+        self._action(help_menu, "Keyboard shortcuts", self.show_shortcuts, "F1")
+
+    @staticmethod
+    def _action(menu, text: str, callback, shortcut: str | None = None) -> QAction:
+        action = QAction(text, menu)
+        if shortcut:
+            action.setShortcut(QKeySequence(shortcut))
+        action.triggered.connect(lambda _checked=False: callback())
+        menu.addAction(action)
+        return action
 
     def _set_density(self, density: str) -> None:
-        try:
-            from .theme import set_density
-            set_density(self, density)
-            if hasattr(self, "api") and self.api is not None:
-                self.api.set_setting("ui.density", density)
-            self.toast(f"Density: {density}")
-        except Exception:
-            log.exception("Failed to apply density")
-
+        T.set_density(self, density)
+        if self.api is not None:
+            self.api.set_setting("ui.density", density)
+        self.toast(f"Spacing: {density}")
 
     def _backup(self) -> None:
-        dest = filedialog.asksaveasfilename(parent=self, title="Save encrypted backup", initialfile="vault-backup.cerealbox")
-        if dest:
-            self.api.vault.backup_to(dest)
-            messagebox.showinfo("Backup saved", "Saved an encrypted copy. It needs your password to open.", parent=self)
-
-    def _export_json(self) -> None:
-        if not messagebox.askokcancel(
-                "Export unencrypted data",
-                "This file will NOT be encrypted. Anyone who can open it can read your data.\n\nKeep it somewhere safe.",
-                parent=self):
-            return
-        dest = filedialog.asksaveasfilename(parent=self, title="Export all data", defaultextension=".json",
-                                            initialfile="cerealbox-export.json", filetypes=[("JSON", "*.json")])
-        if dest:
-            self.api.export_json(dest)
-            messagebox.showinfo("Export finished", f"Saved to {dest}", parent=self)
-
-    def _import_json(self) -> None:
-        src = filedialog.askopenfilename(parent=self, title="Import CerealBox data", filetypes=[("JSON", "*.json")])
-        if not src:
-            return
-        choice = messagebox.askyesnocancel(
-            "Import data",
-            "Merge with your current data?\n\nYes: merge (records with the same ID are overwritten)\n"
-            "No: replace everything\nCancel: stop", parent=self)
-        if choice is None:
+        dest, _ = QFileDialog.getSaveFileName(
+            self, "Save encrypted backup", "vault-backup.cerealbox", "CerealBox vault (*.cerealbox);;All files (*)"
+        )
+        if not dest:
             return
         try:
-            self.api.import_json(Path(src), replace=not choice)
-        except Exception as exc:  # bad file, wrong format, ...
-            log.exception("JSON import failed")
-            messagebox.showerror("Import failed", str(exc), parent=self)
+            self.api.vault.backup_to(dest)
+        except Exception as exc:
+            log.exception("Encrypted backup failed")
+            QMessageBox.critical(self, "Backup failed", str(exc))
         else:
-            messagebox.showinfo("Import finished", "Your data was imported.", parent=self)
+            QMessageBox.information(self, "Backup saved", "Saved an encrypted copy. It needs your password to open.")
+
+    def _export_json(self) -> None:
+        choice = QMessageBox.warning(
+            self,
+            "Export unencrypted data",
+            "This file will NOT be encrypted. Anyone who can open it can read your data.\n\nKeep it somewhere safe.",
+            QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel,
+        )
+        if choice != QMessageBox.StandardButton.Ok:
+            return
+        dest, _ = QFileDialog.getSaveFileName(self, "Export all data", "cerealbox-export.json", "JSON files (*.json)")
+        if not dest:
+            return
+        try:
+            self.api.export_json(dest)
+        except Exception as exc:
+            log.exception("JSON export failed")
+            QMessageBox.critical(self, "Export failed", str(exc))
+        else:
+            QMessageBox.information(self, "Export finished", f"Saved to {dest}")
+
+    def _import_json(self) -> None:
+        src, _ = QFileDialog.getOpenFileName(self, "Import CerealBox data", "", "JSON files (*.json)")
+        if not src:
+            return
+        choice = QMessageBox(self)
+        choice.setWindowTitle("Import data")
+        choice.setText("How do you want to import this data?")
+        choice.setInformativeText("Merge keeps existing records and replaces matching IDs. Replace removes current data.")
+        merge = choice.addButton("Merge", QMessageBox.ButtonRole.AcceptRole)
+        replace = choice.addButton("Replace everything", QMessageBox.ButtonRole.DestructiveRole)
+        choice.addButton(QMessageBox.StandardButton.Cancel)
+        choice.exec()
+        if choice.clickedButton() not in (merge, replace):
+            return
+        try:
+            self.api.import_json(Path(src), replace=choice.clickedButton() is replace)
+        except Exception as exc:
+            log.exception("JSON import failed")
+            QMessageBox.critical(self, "Import failed", str(exc))
+        else:
+            QMessageBox.information(self, "Import finished", "Your data was imported.")
 
     def _change_password(self) -> None:
         new = ask_new_password(self)
-        if new:
+        if not new:
+            return
+        try:
             self.api.vault.change_password(new)
-            messagebox.showinfo("Password changed", "Your vault now uses the new password.", parent=self)
+        except Exception as exc:
+            log.exception("Changing the vault password failed")
+            QMessageBox.critical(self, "Password not changed", str(exc))
+        else:
+            QMessageBox.information(self, "Password changed", "Your vault now uses the new password.")
 
-    def _after(self, name: str, ms: int, fn) -> None:
-        old = self._jobs.get(name)
-        if old:
-            with contextlib.suppress(tk.TclError):
-                self.after_cancel(old)
-        self._jobs[name] = self.after(ms, fn)
+    def _schedule(self, name: str, ms: int, fn) -> None:
+        timer = self._jobs.get(name)
+        if timer is None:
+            timer = QTimer(self)
+            timer.setSingleShot(True)
+            timer.timeout.connect(fn)
+            self._jobs[name] = timer
+        timer.start(ms)
 
-    # ---- status bar, routing between tabs, keyboard ----------------------------------------------
     def toast(self, message: str, ms: int = 3500) -> None:
-        self._status.config(text=message)
-        self._after("toast", ms, lambda: self._status.config(text=""))
+        self.statusBar().showMessage(message, ms)
 
     def _select_index(self, index: int) -> None:
-        tabs = self.nb.tabs()
-        if index < len(tabs):
-            self.nb.select(tabs[index])
+        if 0 <= index < self.nb.count():
+            self.nb.setCurrentIndex(index)
 
-    def _sync_sidebar(self) -> None:
-        selected = self.nb.select()
-        if selected:
-            self.sidebar.set_active(self.nb.index(selected))
-            title = self.nb.tab(selected, "text")
-            self._page_title.configure(text="Today" if title == "Dashboard" else title)
+    def _sync_sidebar(self, *_args) -> None:
+        index = self.nb.currentIndex()
+        self.sidebar.set_active(index)
+        title = self._titles[index] if 0 <= index < len(self._titles) else "CerealBox"
+        self._page_title.setText("Today" if title == "Dashboard" else title)
+        self._new_event_button.setVisible(title == "Calendar")
+        self._new_task_button.setVisible(title in ("Dashboard", "Tasks"))
 
-    def _select_tab(self, title: str):
-        for tab in self.nb.tabs():
-            if self.nb.tab(tab, "text") == title:
-                self.nb.select(tab)
-                return self.nb.nametowidget(tab)
-        return None
+    def _focus_navigation(self) -> None:
+        self.sidebar.query.setFocus()
+        self.sidebar.query.selectAll()
 
     def _on_request(self, topic: str = "", action: str = "", **_kw) -> None:
-        """Cards and other parts of the UI ask for things by name; this sends them to the right tab."""
         target = ACTION_TARGETS.get(action)
         if not target:
             return
         title, method = target
-        if os.environ.get("CEREALBOX_UI_VERBOSE"):
-            print(f"[UI] request action={action} -> tab='{title}', method='{method}'")
-        view = self._select_tab(title)
-        if method and view is not None and hasattr(view, method):
-            getattr(view, method)()
+        view = self._pages.get(title)
+        if view is None:
+            return
+        index = self._titles.index(title)
+        self._select_index(index)
+        if method:
+            callback = getattr(view, method, None)
+            if callable(callback):
+                callback()
 
     def _new_here(self) -> None:
-        try:
-            current = self.nb.tab(self.nb.select(), "text")
-        except tk.TclError:
-            return
-        action = {"Calendar": "new_event", "Tasks": "new_task", "Money": "new_txn"}.get(current)
+        title = self._titles[self.nb.currentIndex()] if self.nb.currentIndex() >= 0 else ""
+        action = {"Dashboard": "new_task", "Calendar": "new_event", "Tasks": "new_task",
+                  "Money": "new_txn"}.get(title)
         if action:
             self._on_request(action=action)
 
-    def _bind_keys(self) -> None:
-        for n in range(1, 5):
-            self.bind(f"<Control-Key-{n}>", lambda _e, i=n - 1: self._select_index(i))
-        self.bind("<Control-n>", lambda _e: self._new_here())
-        self.bind("<Control-N>", lambda _e: self._new_here())
-        self.bind("<Control-slash>", lambda _e: self.show_shortcuts())
-        self.bind("<F1>", lambda _e: self.show_shortcuts())
-
     def show_shortcuts(self) -> None:
-        ShortcutsDialog(self)
+        ShortcutsDialog(self).exec()
 
     def _on_synced(self, topic: str = "", source=None, result=None, **_kw) -> None:
         if source and result is not None:
             self.toast(f"Calendar link updated: {result.summary().splitlines()[0]}")
 
-    # ---- calendar links ----------------------------------------------------------------
     def _sync_tick(self) -> None:
-        """Start any calendar links that are due, and apply the ones that finished downloading."""
         try:
             self.api.call("calendar.start_due_syncs")
             self.api.call("calendar.drain_syncs")
         except Exception:
             log.exception("Calendar link sync failed")
-        self._after("sync", SYNC_CHECK_MS, self._sync_tick)
+            self.toast("Calendar sync failed. See the application log.")
+        self._schedule("sync", SYNC_CHECK_MS, self._sync_tick)
 
-    # ---- reminders ---------------------------------------------------------------------
     def _checkpoint(self) -> None:
-        """Persist how far reminders have been checked. Done rarely: each vault save rewrites the file."""
         self.api.set_setting("core.last_reminder_check", D.to_iso(self._last_check))
         self._checkpoint_at = self._last_check
 
@@ -302,10 +359,11 @@ class Shell(tk.Tk):
             if until - self._checkpoint_at >= CHECKPOINT_EVERY:
                 self._checkpoint()
             if due:
-                self._show_reminders(sorted(due, key=lambda r: r.at), until)
+                self._show_reminders(sorted(due, key=lambda reminder: reminder.at), until)
         except Exception:
             log.exception("Reminder check failed")
-        self._after("poll", POLL_MS, self._poll_reminders)
+            self.toast("Reminder check failed. See the application log.")
+        self._schedule("poll", POLL_MS, self._poll_reminders)
 
     @staticmethod
     def _relative(due: datetime, now: datetime) -> str:
@@ -316,46 +374,55 @@ class Shell(tk.Tk):
         return f"in {text}" if mins > 0 else f"{text} ago"
 
     def _show_reminders(self, items: list[Reminder], now: datetime) -> None:
-        if self._rem_win is None or not self._rem_win.winfo_exists():
-            win = self._rem_win = tk.Toplevel(self)
-            win.title("Reminders")
-            win.configure(bg=T.BG)
-            win.attributes("-topmost", True)
-            outer = ttk.Frame(win, padding=16)
-            outer.pack(fill="both", expand=True)
-            ttk.Label(outer, text="Reminders", style="Title.TLabel").pack(anchor="w", pady=(0, 8))
-            self._rem_list = ttk.Frame(outer)
-            self._rem_list.pack(fill="x")
-            ttk.Button(outer, text="Dismiss all", style="Accent.TButton", command=win.destroy).pack(anchor="e", pady=(12, 0))
-            T.center(win, self)
-        for r in items:
-            row = ttk.Frame(self._rem_list)
-            row.pack(fill="x", pady=4)
-            ttk.Label(row, text=f"{r.title}  ·  {self._relative(r.due, now)}", font=(T.FAMILY, 11, "bold")).pack(anchor="w")
-            if r.detail:
-                ttk.Label(row, text=r.detail, style="Muted.TLabel").pack(anchor="w")
-            if r.actions:
-                bar = ttk.Frame(row)
-                bar.pack(anchor="w", pady=(4, 0))
-                for label, service, args in r.actions:
-                    ttk.Button(bar, text=label,
-                               command=lambda s=service, a=args, b=bar: self._run_action(s, a, b)
-                               ).pack(side="left", padx=(0, 6))
-        self.bell()
+        if self._rem_win is None or not self._rem_win.isVisible():
+            self._rem_win = QDialog(self)
+            self._rem_win.setWindowTitle("Reminders")
+            self._rem_win.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
+            self._rem_win.setMinimumWidth(360)
+            layout = QVBoxLayout(self._rem_win)
+            title = QLabel("Reminders")
+            title.setObjectName("pageTitle")
+            layout.addWidget(title)
+            self._rem_list = layout
+            dismiss = self._button("Dismiss all", self._rem_win.accept, primary=True)
+            layout.addWidget(dismiss, alignment=Qt.AlignmentFlag.AlignRight)
+            T.center(self._rem_win, self)
+        for reminder in items:
+            row = QFrame(self._rem_win)
+            row_layout = QVBoxLayout(row)
+            row_layout.setContentsMargins(0, 6, 0, 6)
+            label = QLabel(f"{reminder.title}  ·  {self._relative(reminder.due, now)}")
+            label.setFont(T.font(11, bold=True))
+            row_layout.addWidget(label)
+            if reminder.detail:
+                detail = QLabel(reminder.detail)
+                detail.setObjectName("muted")
+                row_layout.addWidget(detail)
+            if reminder.actions:
+                actions = QHBoxLayout()
+                for text, service, args in reminder.actions:
+                    button = QPushButton(text)
+                    button.clicked.connect(
+                        lambda _checked=False, s=service, a=args, b=button: self._run_action(s, a, b)
+                    )
+                    actions.addWidget(button)
+                row_layout.addLayout(actions)
+            self._rem_list.insertWidget(self._rem_list.count() - 1, row)
+        self._rem_win.show()
+        self._rem_win.raise_()
 
-    def _run_action(self, service: str, args: tuple, bar: ttk.Frame) -> None:
+    def _run_action(self, service: str, args: tuple, button: QPushButton) -> None:
         try:
             self.api.call(service, *args)
         except Exception as exc:
             log.exception("Reminder action failed: %s", service)
-            messagebox.showerror("Couldn't do that", str(exc), parent=self._rem_win or self)
+            QMessageBox.critical(self._rem_win or self, "Couldn't do that", str(exc))
             return
-        for w in bar.winfo_children():
-            w.state(["disabled"])
-        ttk.Label(bar, text="Done ✓", style="Muted.TLabel").pack(side="left")
+        button.setEnabled(False)
+        button.setText("Done")
 
 
-ACTION_TARGETS = {  # action name -> (tab title, method to run on that tab, or None to just show it)
+ACTION_TARGETS = {
     "new_event": ("Calendar", "new_event"),
     "open_calendar": ("Calendar", None),
     "open_links": ("Calendar", "open_subscriptions"),
@@ -369,33 +436,37 @@ ACTION_TARGETS = {  # action name -> (tab title, method to run on that tab, or N
 }
 
 SHORTCUTS = [
-    ("Ctrl+1 … Ctrl+4", "Go to Dashboard, Calendar, Tasks or Money"),
-    ("Ctrl+N", "New item in the current tab: event, task or transaction"),
-    ("F1 or Ctrl+/", "Show this list"),
-    ("Enter, double-click", "Open the selected item"),
+    ("Ctrl+1 … Ctrl+4", "Go to Today, Calendar, Tasks or Money"),
+    ("Ctrl+N", "Create an item in the current screen"),
+    ("Ctrl+K", "Find a workspace"),
+    ("F1", "Show keyboard shortcuts"),
+    ("Enter or double-click", "Open the selected item"),
     ("Delete", "Delete the selected item"),
     ("Space (Tasks)", "Complete or reopen the selected task"),
-    ("← → and T (Calendar)", "Previous or next period, or jump to today"),
-    ("Drag (Calendar)", "Move an event to another time or day"),
+    ("← → and T (Calendar)", "Change period or jump to today"),
     ("Esc", "Close a dialog"),
 ]
 
 
-class ShortcutsDialog(tk.Toplevel):
-    def __init__(self, parent: tk.Misc):
+class ShortcutsDialog(QDialog):
+    def __init__(self, parent: QWidget):
         super().__init__(parent)
-        self.title("Keyboard shortcuts")
-        self.configure(bg=T.BG)
-        self.resizable(False, False)
-        frm = ttk.Frame(self, padding=22)
-        frm.pack()
-        ttk.Label(frm, text="Keyboard shortcuts", style="Title.TLabel").grid(row=0, column=0, columnspan=2, sticky="w")
-        for i, (keys, what) in enumerate(SHORTCUTS, start=1):
-            ttk.Label(frm, text=keys, style="Muted.TLabel", width=22).grid(row=i, column=0, sticky="w", pady=4)
-            ttk.Label(frm, text=what).grid(row=i, column=1, sticky="w", padx=(10, 0), pady=4)
-        ttk.Button(frm, text="Close", command=self.destroy).grid(row=len(SHORTCUTS) + 1, column=1, sticky="e", pady=(12, 0))
-        self.bind("<Escape>", lambda _e: self.destroy())
-        self.transient(parent.winfo_toplevel())
+        self.setWindowTitle("Keyboard shortcuts")
+        layout = QVBoxLayout(self)
+        title = QLabel("Keyboard shortcuts")
+        title.setObjectName("pageTitle")
+        layout.addWidget(title)
+        for keys, description in SHORTCUTS:
+            row = QHBoxLayout()
+            key_label = QLabel(keys)
+            key_label.setObjectName("muted")
+            key_label.setMinimumWidth(170)
+            row.addWidget(key_label)
+            row.addWidget(QLabel(description), 1)
+            layout.addLayout(row)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        buttons.rejected.connect(self.reject)
+        buttons.accepted.connect(self.accept)
+        layout.addWidget(buttons)
+        self.setModal(True)
         T.center(self, parent)
-        self.wait_visibility()
-        self.grab_set()

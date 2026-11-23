@@ -1,141 +1,209 @@
-"""The calendar screen: month, week and day views drawn on Tk canvases.
-
-Interaction: click an event to edit it. Double-click an empty day or time slot to add one.
-Keys: Left/Right = previous/next, T = today.
-"""
+"""Calendar screen with month, week, and day views."""
 from __future__ import annotations
 
 import logging
-import tkinter as tk
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
+
+from PyQt6.QtCore import QEvent, QPointF, QRectF, Qt, QTimer
+from PyQt6.QtGui import QAction, QColor, QFont, QPainter, QPen
+from PyQt6.QtWidgets import (
+    QComboBox, QDialog, QFileDialog, QHBoxLayout, QLabel, QMenu, QMessageBox,
+    QPushButton, QScrollArea, QToolButton, QVBoxLayout, QWidget,
+)
 
 from ...core import dates as D
-from ...ui import theme as T
 from .dialogs import CategoryDialog, EventDialog, ReadOnlyEventDialog, ask_scope
 from .models import Occurrence
 from .subscriptions import Subscription, normalize_url
 
-HOUR_H = 52  # pixels per hour in the week/day views
-GUTTER = 58  # width of the hour-label column
-CHIP_H = 18  # height of one event chip
+HOUR_H, GUTTER, CHIP_H = 52, 58, 18
+INK, MUTED, FAINT, LINE, SURFACE, DIM, ACCENT, TODAY_BG, NOW = (
+    "#252a32", "#747c88", "#a3a9b2", "#d9dde2", "#ffffff", "#f4f5f7",
+    "#3977d5", "#edf4ff", "#d64a45",
+)
 
 
-def _modal(win: tk.Toplevel, parent: tk.Misc) -> None:
-    win.transient(parent.winfo_toplevel())
-    T.center(win, parent)
-    win.wait_visibility()
-    win.grab_set()
+def _color(value: str) -> QColor:
+    return QColor(value)
 
 
-class CalendarView(ttk.Frame):
-    def __init__(self, parent: tk.Misc, cal):
+def _tint(value: str, amount: float) -> QColor:
+    c = _color(value)
+    return QColor(int(c.red() * amount + 255 * (1 - amount)),
+                  int(c.green() * amount + 255 * (1 - amount)),
+                  int(c.blue() * amount + 255 * (1 - amount)))
+
+
+def _shade(value: str, amount: float) -> QColor:
+    c = _color(value)
+    return QColor(int(c.red() * amount), int(c.green() * amount), int(c.blue() * amount))
+
+
+def _on_color(value: str) -> QColor:
+    c = _color(value)
+    return QColor("#ffffff" if (c.red() * 299 + c.green() * 587 + c.blue() * 114) / 1000 < 145 else "#20242a")
+
+
+class _CalendarCanvas(QWidget):
+    def __init__(self, view: "CalendarView", head: bool = False):
+        super().__init__(view)
+        self.view, self.head = view, head
+        self.setMouseTracking(True)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setMinimumSize(250, 80)
+
+    def paintEvent(self, _event) -> None:
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        p.fillRect(self.rect(), _color(SURFACE))
+        if self.head:
+            self.view._draw_header(p, self.width(), self.height())
+        elif self.view.mode == "month":
+            self.view._draw_month(p, self.width(), self.height())
+        else:
+            self.view._draw_timed(p, self.width())
+        self.view._draw_ghost(p, self)
+        p.end()
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.view._press(self, event.position())
+
+    def mouseMoveEvent(self, event) -> None:
+        self.view._motion(self, event.position())
+
+    def mouseReleaseEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.view._release(self, event.position())
+
+    def mouseDoubleClickEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.view._double(self, event.position())
+
+    def keyPressEvent(self, event) -> None:
+        if event.key() == Qt.Key.Key_Left:
+            self.view.step(-1)
+        elif event.key() == Qt.Key.Key_Right:
+            self.view.step(1)
+        elif event.key() == Qt.Key.Key_T:
+            self.view.go_today()
+        else:
+            super().keyPressEvent(event)
+
+
+class CalendarView(QWidget):
+    def __init__(self, parent: QWidget, cal):
         super().__init__(parent)
         self.cal = cal
         self.mode = "month"
         self.cursor = date.today()
         self.first_weekday = D.SUNDAY
-        self.hidden: set = set()  # category ids (or None) hidden by the filter
+        self.hidden: set = set()
         self._hits: list = []
         self._head_hits: list = []
-        self._pending = False
-        self._press_info: dict | None = None  # what the mouse went down on
-        self._dragging = False
-        self._pending_edit = None  # a click waits briefly so a double-click doesn't open two editors
-        self._col_days: list | None = None  # dates shown in week/day columns, left to right
+        self._col_days: list[date] = []
         self._colw = 1.0
-        self._scroll_frac = 6.5 / 24  # week/day views open scrolled to just before 7 AM
-        self._drawn_timed = False
-        self.f_small, self.f_bold = T.font(9), T.font(9, True)
-        self.f_day, self.f_hour, self.f_num = T.font(10, True), T.font(8), T.font(15, True)
-
-        self._build_toolbar()
-        self._build_canvases()
-        self._rebuild_filter_menu()
+        self._scroll_frac = 6.5 / 24
+        self._press_info = None
+        self._dragging = False
+        self._pending_edit = QTimer(self)
+        self._pending_edit.setSingleShot(True)
+        self._pending_edit.timeout.connect(self._finish_pending_edit)
+        self._pending_occ = None
         self._subs = [("calendar.*", self._on_change), ("vault.reloaded", self._on_change)]
         for pattern, handler in self._subs:
             cal.api.on(pattern, handler)
-        self._timer = self._idle = None
-        self._tick_timer()
-        self.bind("<Destroy>", self._cleanup, add="+")
+        self.destroyed.connect(self._cleanup)
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self.redraw)
+        self._timer.start(60_000)
 
-    # ---- construction ----------------------------------------------------------------
-    def _build_toolbar(self) -> None:
-        bar = ttk.Frame(self, padding=(14, 12, 14, 8))
-        bar.pack(fill="x")
-        ttk.Button(bar, text="‹", width=3, command=lambda: self.step(-1)).pack(side="left")
-        ttk.Button(bar, text="Today", command=self.go_today).pack(side="left", padx=6)
-        ttk.Button(bar, text="›", width=3, command=lambda: self.step(1)).pack(side="left")
-        self.title_var = tk.StringVar()
-        ttk.Label(bar, textvariable=self.title_var, style="Title.TLabel").pack(side="left", padx=18)
-
-        right = ttk.Frame(bar)
-        right.pack(side="right")
-        self.mode_var = tk.StringVar(value=self.mode)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(14, 12, 14, 14)
+        bar = QHBoxLayout()
+        root.addLayout(bar)
+        self._button(bar, "‹", lambda: self.step(-1))
+        self._button(bar, "Today", self.go_today)
+        self._button(bar, "›", lambda: self.step(1))
+        self.title_label = QLabel()
+        self.title_label.setStyleSheet("font-size: 18px; font-weight: 600;")
+        bar.addWidget(self.title_label)
+        bar.addStretch(1)
         for label in ("Month", "Week", "Day"):
-            ttk.Radiobutton(right, text=label, value=label.lower(), variable=self.mode_var,
-                            style="Segment.Toolbutton", command=lambda: self.set_mode(self.mode_var.get())
-                            ).pack(side="left")
-        ttk.Button(right, text="New event", style="Accent.TButton", command=self.new_event).pack(side="left", padx=(14, 6))
-        more = ttk.Menubutton(right, text="More")
-        more.pack(side="left")
-        menu = tk.Menu(more, tearoff=False)
-        more["menu"] = menu
-        menu.add_command(label="Import .ics file…", command=self.import_ics)
-        menu.add_command(label="Export .ics file…", command=self.export_ics)
-        menu.add_command(label="Calendar links (.ics)…", command=self.open_subscriptions)
-        menu.add_separator()
-        self.filter_menu = tk.Menu(menu, tearoff=False)
-        menu.add_cascade(label="Show categories", menu=self.filter_menu)
-        menu.add_command(label="Manage categories…", command=self.manage_categories)
+            b = QPushButton(label)
+            b.setCheckable(True)
+            b.setChecked(label.lower() == self.mode)
+            b.clicked.connect(lambda checked=False, m=label.lower(): self.set_mode(m))
+            bar.addWidget(b)
+            setattr(self, f"{label.lower()}_button", b)
+        self._button(bar, "New event", self.new_event)
+        more = QToolButton()
+        more.setText("More")
+        more.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.more_menu = QMenu(more)
+        more.setMenu(self.more_menu)
+        self.more_menu.addAction("Import .ics file…", self.import_ics)
+        self.more_menu.addAction("Export .ics file…", self.export_ics)
+        self.more_menu.addAction("Calendar links (.ics)…", self.open_subscriptions)
+        self.more_menu.addSeparator()
+        self.filter_menu = self.more_menu.addMenu("Show categories")
+        self.more_menu.addAction("Manage categories…", self.manage_categories)
+        bar.addWidget(more)
 
-    def _build_canvases(self) -> None:
-        border = tk.Frame(self, bg=T.LINE, padx=1, pady=1)
-        border.pack(fill="both", expand=True, padx=14, pady=(0, 14))
-        border.rowconfigure(1, weight=1)
-        border.columnconfigure(0, weight=1)
-        self.head = tk.Canvas(border, height=1, bg=T.SURFACE, highlightthickness=0)
-        self.body = tk.Canvas(border, bg=T.SURFACE, highlightthickness=0, yscrollincrement=13)
-        self.vbar = ttk.Scrollbar(border, orient="vertical", command=self.body.yview)
-        self.body.configure(yscrollcommand=self.vbar.set)
-        self.head_fill = tk.Frame(border, bg=T.SURFACE)  # fills the corner above the scrollbar
-        self.head.grid(row=0, column=0, sticky="ew")
-        self.head_fill.grid(row=0, column=1, sticky="nsew")
-        self.body.grid(row=1, column=0, sticky="nsew")
-        self.vbar.grid(row=1, column=1, sticky="ns")
-        self.head.grid_remove()
-        self.head_fill.grid_remove()
-        self.vbar.grid_remove()
+        self.head = _CalendarCanvas(self, head=True)
+        self.head.setFixedHeight(0)
+        root.addWidget(self.head)
+        self.scroll = QScrollArea(self)
+        self.scroll.setWidgetResizable(False)
+        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.body = _CalendarCanvas(self)
+        self.scroll.setWidget(self.body)
+        root.addWidget(self.scroll, 1)
+        self.scroll.verticalScrollBar().valueChanged.connect(self._remember_scroll)
+        self._rebuild_filter_menu()
+        self._resize_canvas()
 
-        self.body.bind("<Configure>", lambda _e: self.schedule_redraw())
-        for canvas, which in ((self.body, "body"), (self.head, "head")):
-            canvas.bind("<Button-1>", lambda e, w=which: self._press(w, e))
-            canvas.bind("<B1-Motion>", lambda e, w=which: self._motion(w, e))
-            canvas.bind("<ButtonRelease-1>", lambda e, w=which: self._release(w, e))
-            canvas.bind("<Double-Button-1>", lambda e, w=which: self._double(w, e))
-            canvas.bind("<MouseWheel>", self._wheel)
-            canvas.bind("<Button-4>", self._wheel)
-            canvas.bind("<Button-5>", self._wheel)
-            canvas.bind("<Left>", lambda _e: self.step(-1))
-            canvas.bind("<Right>", lambda _e: self.step(1))
-            canvas.bind("<Key-t>", lambda _e: self.go_today())
+    def _cleanup(self, *_args) -> None:
+        for pattern, handler in self._subs:
+            self.cal.api.off(pattern, handler)
 
-    def _rebuild_filter_menu(self) -> None:
-        self.filter_menu.delete(0, "end")
-        self._filter_vars: dict = {}
-        entries = [(c.id, c.name) for c in self.cal.categories()] + [(None, "No category")]
-        for key, label in entries:
-            var = tk.BooleanVar(value=key not in self.hidden)
-            self._filter_vars[key] = var
-            self.filter_menu.add_checkbutton(label=label, variable=var, command=lambda k=key: self._toggle(k))
+    @staticmethod
+    def _button(layout, text, callback) -> QPushButton:
+        b = QPushButton(text)
+        b.clicked.connect(callback)
+        layout.addWidget(b)
+        return b
 
-    def _toggle(self, key) -> None:
-        (self.hidden.discard if self._filter_vars[key].get() else self.hidden.add)(key)
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._resize_canvas()
+
+    def _resize_canvas(self) -> None:
+        w = max(250, self.scroll.viewport().width())
+        if self.mode == "month":
+            self.body.setFixedSize(w, max(450, self.scroll.viewport().height()))
+        else:
+            self.body.setFixedSize(w, 24 * HOUR_H)
+            self.head.setFixedSize(w, self.head.height())
         self.redraw()
 
-    # ---- navigation ------------------------------------------------------------------
+    def _rebuild_filter_menu(self) -> None:
+        self.filter_menu.clear()
+        self._filter_actions = {}
+        for key, label in [(c.id, c.name) for c in self.cal.categories()] + [(None, "No category")]:
+            action = QAction(label, self.filter_menu)
+            action.setCheckable(True)
+            action.setChecked(key not in self.hidden)
+            action.toggled.connect(lambda checked, k=key: self._toggle(k, checked))
+            self.filter_menu.addAction(action)
+            self._filter_actions[key] = action
+
+    def _toggle(self, key, shown: bool) -> None:
+        (self.hidden.discard if shown else self.hidden.add)(key)
+        self.redraw()
+
     def step(self, n: int) -> None:
         if self.mode == "month":
             self.cursor = D.add_months(self.cursor.replace(day=1), n)
@@ -150,28 +218,23 @@ class CalendarView(ttk.Frame):
     def set_mode(self, mode: str) -> None:
         today = date.today()
         if mode != "month" and self.mode == "month" and (self.cursor.year, self.cursor.month) == (today.year, today.month):
-            self.cursor = today  # month -> week/day lands on today when it's in view
+            self.cursor = today
+        if self.mode != "month":
+            self._remember_scroll()
         self.mode = mode
-        self.mode_var.set(mode)
-        if mode == "month":
-            self.head.grid_remove()
-            self.head_fill.grid_remove()
-            self.vbar.grid_remove()
-        else:
-            self.head.grid()
-            self.head_fill.grid()
-            self.vbar.grid()
-        self.update_idletasks()
+        for name in ("month", "week", "day"):
+            getattr(self, f"{name}_button").setChecked(name == mode)
+        self.head.setFixedHeight(0 if mode == "month" else 50)
+        self._resize_canvas()
         self.redraw()
 
     def _range(self) -> tuple[date, date]:
-        """Visible dates as [first, last_exclusive)."""
         if self.mode == "month":
             grid = D.month_grid(self.cursor.year, self.cursor.month, self.first_weekday)
             return grid[0][0], grid[-1][-1] + timedelta(days=1)
         if self.mode == "week":
-            ws = D.week_start(self.cursor, self.first_weekday)
-            return ws, ws + timedelta(days=7)
+            start = D.week_start(self.cursor, self.first_weekday)
+            return start, start + timedelta(days=7)
         return self.cursor, self.cursor + timedelta(days=1)
 
     def _title(self) -> str:
@@ -185,86 +248,51 @@ class CalendarView(ttk.Frame):
             return f"{first:%b} {first.day} – {end.day}, {end.year}"
         return f"{first:%b} {first.day} – {end:%b} {end.day}, {end.year}"
 
-    # ---- redraw plumbing -------------------------------------------------------------
     def _on_change(self, topic: str = "", **_) -> None:
-        if topic == "calendar.categories.changed" or topic == "vault.reloaded":
+        if topic in ("calendar.categories.changed", "vault.reloaded"):
             self._rebuild_filter_menu()
-        self.schedule_redraw()
+        QTimer.singleShot(0, self.redraw)
 
-    def _cleanup(self, event) -> None:
-        if event.widget is not self:
-            return
-        for pattern, handler in self._subs:
-            self.cal.api.off(pattern, handler)
-        for job in (self._timer, self._idle):
-            if job:
-                self.after_cancel(job)
-
-    def schedule_redraw(self) -> None:
-        if not self._pending:
-            self._pending = True
-            self._idle = self.after_idle(self.redraw)
-
-    def _tick(self) -> None:
-        self.schedule_redraw()  # keeps the "now" line and today highlight fresh
-        self._tick_timer()
-
-    def _tick_timer(self) -> None:
-        self._timer = self.after(60_000, self._tick)
+    def _remember_scroll(self, *_args) -> None:
+        if self.mode != "month":
+            bar = self.scroll.verticalScrollBar()
+            self._scroll_frac = bar.value() / max(1, bar.maximum() + bar.pageStep())
 
     def redraw(self) -> None:
-        self._pending = False
-        if self.mode != "month" and self._drawn_timed:
-            self._scroll_frac = self.body.yview()[0]
-        self.body.delete("all")
-        self.head.delete("all")
-        self._hits, self._head_hits = [], []
-        self.title_var.set(self._title())
-        w, h = self.body.winfo_width(), self.body.winfo_height()
-        if w < 80 or h < 80:
-            return
+        self.title_label.setText(self._title())
         first, last = self._range()
-        occs = self.cal.occurrences_between(D.day_start(first), D.day_start(last), self.hidden)
-        if self.mode == "month":
-            self._draw_month(occs, w, h)
-            self._drawn_timed = False
-        else:
-            self._draw_timed(occs, w)
-            self._drawn_timed = True
+        self._occurrences = self.cal.occurrences_between(D.day_start(first), D.day_start(last), self.hidden)
+        self.body.update()
+        if self.mode != "month":
+            self.head.update()
+            QTimer.singleShot(0, lambda: self.scroll.verticalScrollBar().setValue(
+                round(self._scroll_frac * self.scroll.verticalScrollBar().maximum())))
 
-    # ---- drawing helpers -------------------------------------------------------------
     @staticmethod
-    def _fit(text: str, font, max_width: float) -> str:
+    def _fit(p: QPainter, text: str, max_width: float) -> str:
         text = text.replace("\n", " ")
-        if font.measure(text) <= max_width:
+        if p.fontMetrics().horizontalAdvance(text) <= max_width:
             return text
-        while text and font.measure(text + "…") > max_width:
+        while text and p.fontMetrics().horizontalAdvance(text + "…") > max_width:
             text = text[:-1]
         return text.rstrip() + "…" if text else ""
 
     @staticmethod
     def _bucket(occs: list[Occurrence]) -> dict[date, list[Occurrence]]:
-        by_day: dict[date, list[Occurrence]] = defaultdict(list)
-        for o in occs:
-            for d in o.days():
-                by_day[d].append(o)
-        for items in by_day.values():
+        result: dict[date, list[Occurrence]] = defaultdict(list)
+        for occ in occs:
+            for day in occ.days():
+                result[day].append(occ)
+        for items in result.values():
             items.sort(key=lambda o: (not o.all_day, o.start, o.title.lower()))
-        return by_day
+        return result
 
     @staticmethod
     def _layout(items: list[tuple]) -> list[tuple]:
-        """Side-by-side columns for overlapping events: -> (start, end, occ, column, n_columns)."""
-        result: list[tuple] = []
-        cluster: list[tuple] = []
-        col_ends: list[datetime] = []
-        cluster_end = None
-
-        def flush() -> None:
-            n = len(col_ends)
-            result.extend((s, e, o, col, n) for s, e, o, col in cluster)
-
-        for s, e, o in sorted(items, key=lambda t: (t[0], t[1])):
+        result, cluster, col_ends, cluster_end = [], [], [], None
+        def flush():
+            result.extend((s, e, o, col, len(col_ends)) for s, e, o, col in cluster)
+        for s, e, o in sorted(items, key=lambda x: (x[0], x[1])):
             if cluster and s >= cluster_end:
                 flush()
                 cluster, col_ends, cluster_end = [], [], None
@@ -281,487 +309,386 @@ class CalendarView(ttk.Frame):
             flush()
         return result
 
-    # ---- month view ------------------------------------------------------------------
-    def _draw_month(self, occs: list[Occurrence], w: int, h: int) -> None:
-        c = self.body
-        c.configure(scrollregion=(0, 0, w, h))
+    def _text(self, p, x, y, text, color=INK, size=9, bold=False,
+              align=Qt.AlignmentFlag.AlignLeft, width=1000):
+        font = QFont()
+        font.setPointSize(size)
+        font.setBold(bold)
+        p.setFont(font)
+        p.setPen(_color(color))
+        p.drawText(QRectF(x, y - size - 2, width, size + 8), align, text)
+
+    def _draw_month(self, p: QPainter, w: int, h: int) -> None:
         grid = D.month_grid(self.cursor.year, self.cursor.month, self.first_weekday)
         hdr, cw = 32, w / 7
         ch = (h - hdr) / 6
-        today = date.today()
-        by_day = self._bucket(occs)
-        cap = max(0, int((ch - 34) // (CHIP_H + 2)))
+        today, by_day = date.today(), self._bucket(self._occurrences)
+        self._hits = []
         for i, d in enumerate(grid[0]):
-            c.create_text(i * cw + 10, hdr / 2, text=f"{d:%a}", anchor="w", fill=T.MUTED, font=self.f_small)
+            self._text(p, i * cw + 10, hdr / 2 + 5, f"{d:%a}", MUTED)
         for r, week in enumerate(grid):
             for i, d in enumerate(week):
-                x0, y0 = i * cw, hdr + r * ch
-                x1, y1 = x0 + cw, y0 + ch
+                x0, y0, x1, y1 = i * cw, hdr + r * ch, (i + 1) * cw, hdr + (r + 1) * ch
                 in_month = d.month == self.cursor.month
-                fill = T.TODAY_BG if d == today else (T.SURFACE if in_month else T.DIM)
-                c.create_rectangle(x0, y0, x1, y1, fill=fill, outline=T.LINE)
-                self._hits.append((x0, y0, x1, y1, "day", d))
+                p.fillRect(QRectF(x0, y0, cw, ch), _color(TODAY_BG if d == today else (SURFACE if in_month else DIM)))
+                p.setPen(_color(LINE))
+                p.drawRect(QRectF(x0, y0, cw, ch))
+                self._hits.append((QRectF(x0, y0, cw, ch), "day", d))
                 if d == today:
-                    c.create_oval(x0 + 6, y0 + 5, x0 + 28, y0 + 27, fill=T.ACCENT, outline="")
-                    c.create_text(x0 + 17, y0 + 16, text=str(d.day), fill="#FFFFFF", font=self.f_day)
+                    p.setBrush(_color(ACCENT))
+                    p.setPen(Qt.PenStyle.NoPen)
+                    p.drawEllipse(QRectF(x0 + 6, y0 + 5, 22, 22))
+                    self._text(p, x0 + 6, y0 + 17, str(d.day), "#ffffff", 10, True,
+                               Qt.AlignmentFlag.AlignHCenter, 22)
                 else:
                     label = f"{d:%b} {d.day}" if d.day == 1 else str(d.day)
-                    c.create_text(x0 + 10, y0 + 16, text=label, anchor="w", font=self.f_day,
-                                  fill=T.INK if in_month else T.FAINT)
+                    self._text(p, x0 + 10, y0 + 18, label, INK if in_month else FAINT, 10, True)
                 items = by_day.get(d, [])
-                shown = items if len(items) <= cap else items[: max(cap - 1, 0)]
+                cap = max(0, int((ch - 34) // (CHIP_H + 2)))
+                shown = items if len(items) <= cap else items[:max(cap - 1, 0)]
                 y = y0 + 32
-                for o in shown:
-                    self._month_chip(c, o, x0 + 4, y, x1 - 4)
+                for occ in shown:
+                    self._month_chip(p, occ, x0 + 4, y, x1 - 4)
                     y += CHIP_H + 2
                 if len(items) > len(shown) and y + CHIP_H <= y1 + 2:
-                    c.create_text(x0 + 10, y + CHIP_H / 2, anchor="w", fill=T.MUTED, font=self.f_small,
-                                  text=f"+{len(items) - len(shown)} more")
-                    self._hits.append((x0 + 4, y, x1 - 4, y + CHIP_H, "more", d))
+                    self._text(p, x0 + 10, y + CHIP_H / 2 + 5, f"+{len(items)-len(shown)}", MUTED)
+                    self._hits.append((QRectF(x0 + 4, y, x1 - x0 - 8, CHIP_H), "more", d))
 
-    def _month_chip(self, c: tk.Canvas, o: Occurrence, x0: float, y: float, x1: float) -> None:
-        col = self.cal.color_of(o.event)
-        mid = y + CHIP_H / 2
-        if o.all_day or len(o.days()) > 1:
-            c.create_rectangle(x0, y, x1, y + CHIP_H, fill=col, outline="")
-            c.create_text(x0 + 6, mid, anchor="w", text=self._fit(o.title, self.f_small, x1 - x0 - 12),
-                          fill=T.on_color(col), font=self.f_small)
+    def _month_chip(self, p: QPainter, occ: Occurrence, x0: float, y: float, x1: float) -> None:
+        col = self.cal.color_of(occ.event)
+        if occ.all_day or len(occ.days()) > 1:
+            p.fillRect(QRectF(x0, y, x1 - x0, CHIP_H), _color(col))
+            text, color = occ.title, _on_color(col)
         else:
-            c.create_oval(x0 + 4, mid - 3, x0 + 10, mid + 3, fill=col, outline="")
-            c.create_text(x0 + 15, mid, anchor="w", fill=T.INK, font=self.f_small,
-                          text=self._fit(f"{D.fmt_time_short(o.start)} {o.title}", self.f_small, x1 - x0 - 18))
-        self._hits.append((x0, y, x1, y + CHIP_H, "event", o))
+            p.setBrush(_color(col))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.drawEllipse(QRectF(x0 + 4, y + 6, 6, 6))
+            text, color = f"{D.fmt_time_short(occ.start)} {occ.title}", _color(INK)
+        self._text(p, x0 + 15 if not (occ.all_day or len(occ.days()) > 1) else x0 + 6,
+                   y + CHIP_H / 2 + 4, self._fit(p, text, x1 - x0 - 18), color.name(), 9)
+        self._hits.append((QRectF(x0, y, x1 - x0, CHIP_H), "event", occ))
 
-    # ---- week / day view -------------------------------------------------------------
-    def _draw_timed(self, occs: list[Occurrence], w: int) -> None:
+    def _draw_header(self, p: QPainter, w: int, h: int) -> None:
         first, last = self._range()
-        n = (last - first).days
-        days = [first + timedelta(days=i) for i in range(n)]
-        colw = (w - GUTTER) / n
-        self._colw, self._col_days = colw, days
-        today = date.today()
-
-        # all-day strip: pack multi-day bars into rows
-        rows: list[list[tuple[int, int]]] = []
-        placed: list[tuple[Occurrence, int, int, int]] = []
-        allday = sorted((o for o in occs if o.all_day), key=lambda o: (o.start, -(o.end - o.start).total_seconds()))
-        for o in allday:
-            c0 = max((o.days()[0] - first).days, 0)
-            c1 = min((o.days()[-1] - first).days, n - 1)
-            for r, used in enumerate(rows):
-                if all(c1 < a or c0 > b for a, b in used):
-                    used.append((c0, c1))
-                    placed.append((o, c0, c1, r))
-                    break
+        days = [first + timedelta(days=i) for i in range((last-first).days)]
+        colw = (w-GUTTER) / len(days)
+        rows, placed = [], []
+        allday = sorted((o for o in self._occurrences if o.all_day),
+                        key=lambda o: (o.start, -(o.end-o.start).total_seconds()))
+        for occ in allday:
+            c0 = max((occ.days()[0]-first).days, 0)
+            c1 = min((occ.days()[-1]-first).days, len(days)-1)
+            for row, used in enumerate(rows):
+                if all(c1 < a or c0 > b for a,b in used):
+                    used.append((c0,c1)); placed.append((occ,c0,c1,row)); break
             else:
-                rows.append([(c0, c1)])
-                placed.append((o, c0, c1, len(rows) - 1))
-        shown_rows = min(len(rows), 4)
-        hdr = 50
-        head_h = hdr + shown_rows * (CHIP_H + 3) + (6 if shown_rows else 0)
-        hd = self.head
-        hd.configure(height=head_h)
-        for i, d in enumerate(days):
-            x0 = GUTTER + i * colw
+                rows.append([(c0,c1)]); placed.append((occ,c0,c1,len(rows)-1))
+        shown = min(len(rows), 4)
+        height = 50 + shown*(CHIP_H+3) + (6 if shown else 0)
+        if self.head.height() != height:
+            self.head.setFixedHeight(height)
+        today = date.today()
+        self._head_hits = []
+        for i,d in enumerate(days):
+            x = GUTTER + i*colw
             if d == today:
-                hd.create_rectangle(x0, 0, x0 + colw, head_h, fill=T.TODAY_BG, outline="")
-        for i, d in enumerate(days):
-            x0 = GUTTER + i * colw
-            hd.create_line(x0, 0, x0, head_h, fill=T.LINE)
-            hd.create_text(x0 + 10, 15, anchor="w", text=f"{d:%a}", font=self.f_small,
-                           fill=T.ACCENT if d == today else T.MUTED)
-            hd.create_text(x0 + 10, 35, anchor="w", text=str(d.day), font=self.f_num,
-                           fill=T.ACCENT if d == today else T.INK)
-            self._head_hits.append((x0, 0, x0 + colw, head_h, "allday", d))
-        hd.create_line(0, head_h - 1, w, head_h - 1, fill=T.LINE)
-        if shown_rows:
-            hd.create_text(GUTTER - 8, hdr + CHIP_H / 2, anchor="e", text="all day", fill=T.MUTED, font=self.f_hour)
-        for o, c0, c1, r in placed:
-            if r >= shown_rows:
-                continue
-            x0, x1 = GUTTER + c0 * colw + 3, GUTTER + (c1 + 1) * colw - 3
-            y = hdr + r * (CHIP_H + 3)
-            col = self.cal.color_of(o.event)
-            hd.create_rectangle(x0, y, x1, y + CHIP_H, fill=col, outline="")
-            hd.create_text(x0 + 6, y + CHIP_H / 2, anchor="w", font=self.f_small, fill=T.on_color(col),
-                           text=self._fit(o.title, self.f_small, x1 - x0 - 12))
-            self._head_hits.append((x0, y, x1, y + CHIP_H, "event", o))
-        extra = sum(1 for p in placed if p[3] >= shown_rows)
-        if extra:
-            hd.create_text(GUTTER - 8, head_h - 10, anchor="e", text=f"+{extra}", fill=T.MUTED, font=self.f_small)
+                p.fillRect(QRectF(x,0,colw,height),_color(TODAY_BG))
+            p.setPen(_color(LINE)); p.drawLine(QPointF(x,0),QPointF(x,height))
+            self._text(p,x+10,17,f"{d:%a}",ACCENT if d==today else MUTED)
+            self._text(p,x+10,39,str(d.day),ACCENT if d==today else INK,15,True)
+            self._head_hits.append((QRectF(x,0,colw,height),"allday",d))
+        p.setPen(_color(LINE)); p.drawLine(0,height-1,w,height-1)
+        if shown:
+            self._text(p,0,50+CHIP_H/2+5,"all day",MUTED,8,False,Qt.AlignmentFlag.AlignRight,GUTTER-8)
+        for occ,c0,c1,row in placed:
+            if row >= shown: continue
+            x0,x1=GUTTER+c0*colw+3,GUTTER+(c1+1)*colw-3
+            y=50+row*(CHIP_H+3); color=self.cal.color_of(occ.event)
+            p.fillRect(QRectF(x0,y,x1-x0,CHIP_H),_color(color))
+            self._text(p,x0+6,y+CHIP_H/2+4,self._fit(p,occ.title,x1-x0-12),_on_color(color).name())
+            self._head_hits.append((QRectF(x0,y,x1-x0,CHIP_H),"event",occ))
+        extra=sum(1 for _,_,_,r in placed if r>=shown)
+        if extra:         self._text(p,0,height-5,f"+{extra}",MUTED,9,False,Qt.AlignmentFlag.AlignRight,GUTTER-8)
 
-        # scrolling hour grid
-        c, total = self.body, 24 * HOUR_H
-        c.configure(scrollregion=(0, 0, w, total))
-        for i, d in enumerate(days):
-            if d == today:
-                c.create_rectangle(GUTTER + i * colw, 0, GUTTER + (i + 1) * colw, total, fill=T.TODAY_BG, outline="")
+    def _draw_timed(self, p: QPainter, w: int) -> None:
+        first,last=self._range()
+        days=[first+timedelta(days=i) for i in range((last-first).days)]
+        n=len(days); colw=(w-GUTTER)/n; self._colw,self._col_days=colw,days
+        today=date.today(); total=24*HOUR_H
+        for i,d in enumerate(days):
+            if d==today: p.fillRect(QRectF(GUTTER+i*colw,0,colw,total),_color(TODAY_BG))
         for hr in range(24):
-            y = hr * HOUR_H
-            c.create_line(GUTTER, y, w, y, fill=T.LINE)
-            c.create_line(GUTTER, y + HOUR_H / 2, w, y + HOUR_H / 2, fill=T.LINE_SOFT)
-            if hr:
-                c.create_text(GUTTER - 8, y, anchor="e", text=D.fmt_hour(hr), fill=T.MUTED, font=self.f_hour)
-        for i in range(n + 1):
-            c.create_line(GUTTER + i * colw, 0, GUTTER + i * colw, total, fill=T.LINE)
-
-        for i, d in enumerate(days):
-            x0 = GUTTER + i * colw
-            self._hits.append((x0, 0, x0 + colw, total, "slot", d))
-            day0 = D.day_start(d)
-            day1 = day0 + timedelta(days=1)
-            items = []
-            for o in occs:
-                if o.all_day:
-                    continue
-                end_eff = max(o.end, o.start + timedelta(minutes=30))
-                if o.start < day1 and end_eff > day0:
-                    items.append((max(o.start, day0), min(end_eff, day1), o))
-            for s, e, o, col, ncols in self._layout(items):
-                width = (colw - 6) / ncols
-                bx0 = x0 + 3 + col * width
-                bx1 = bx0 + width - 2
-                y0 = (s - day0).total_seconds() / 3600 * HOUR_H + 1
-                y1 = (e - day0).total_seconds() / 3600 * HOUR_H - 1
-                color = self.cal.color_of(o.event)
-                c.create_rectangle(bx0, y0, bx1, y1, fill=T.tint(color, 0.8), outline=T.tint(color, 0.5))
-                c.create_rectangle(bx0, y0, bx0 + 4, y1, fill=color, outline="")
-                tw = bx1 - bx0 - 12
-                c.create_text(bx0 + 9, y0 + 3, anchor="nw", font=self.f_bold, fill=T.shade(color, 0.55),
-                              text=self._fit(o.title, self.f_bold, tw))
-                if y1 - y0 >= 38:
-                    sub = f"{D.fmt_time(o.start)} – {D.fmt_time(o.end)}"
-                    if o.event.location:
-                        sub += f"  ·  {o.event.location}"
-                    c.create_text(bx0 + 9, y0 + 18, anchor="nw", font=self.f_small, fill=T.shade(color, 0.4),
-                                  text=self._fit(sub, self.f_small, tw))
-                self._hits.append((bx0, y0, bx1, y1, "event", o))
-
+            y=hr*HOUR_H
+            p.setPen(_color(LINE)); p.drawLine(QPointF(GUTTER,y),QPointF(w,y))
+            p.setPen(_color("#eceef0")); p.drawLine(QPointF(GUTTER,y+HOUR_H/2),QPointF(w,y+HOUR_H/2))
+            if hr: self._text(p,0,y+4,D.fmt_hour(hr),MUTED,8,False,Qt.AlignmentFlag.AlignRight,GUTTER-8)
+        for i in range(n+1):
+            x=GUTTER+i*colw
+            p.setPen(_color(LINE)); p.drawLine(QPointF(x,0),QPointF(x,total))
+        self._hits=[]
+        for i,d in enumerate(days):
+            x0=GUTTER+i*colw
+            self._hits.append((QRectF(x0,0,colw,total),"slot",d))
+            day0=D.day_start(d); day1=day0+timedelta(days=1); items=[]
+            for occ in self._occurrences:
+                if occ.all_day: continue
+                effective=max(occ.end,occ.start+timedelta(minutes=30))
+                if occ.start<day1 and effective>day0:
+                    items.append((max(occ.start,day0),min(effective,day1),occ))
+            for s,e,occ,col,count in self._layout(items):
+                width=(colw-6)/count; bx0=x0+3+col*width; bx1=bx0+width-2
+                y0=(s-day0).total_seconds()/3600*HOUR_H+1
+                y1=(e-day0).total_seconds()/3600*HOUR_H-1
+                color=self.cal.color_of(occ.event)
+                p.fillRect(QRectF(bx0,y0,bx1-bx0,y1-y0),_tint(color,.8))
+                p.fillRect(QRectF(bx0,y0,4,y1-y0),_color(color))
+                self._text(p,bx0+9,y0+14,self._fit(p,occ.title,bx1-bx0-12),_shade(color,.55).name(),9,True)
+                if y1-y0>=38:
+                    sub=f"{D.fmt_time(occ.start)} – {D.fmt_time(occ.end)}"
+                    if occ.event.location: sub+=f"  ·  {occ.event.location}"
+                    self._text(p,bx0+9,y0+29,self._fit(p,sub,bx1-bx0-12),_shade(color,.4).name(),9)
+                self._hits.append((QRectF(bx0,y0,bx1-bx0,y1-y0),"event",occ))
         if today in days:
-            x0 = GUTTER + days.index(today) * colw
-            y = (datetime.now() - D.day_start(today)).total_seconds() / 3600 * HOUR_H
-            c.create_line(x0, y, x0 + colw, y, fill=T.NOW, width=2)
-            c.create_oval(x0 - 4, y - 4, x0 + 4, y + 4, fill=T.NOW, outline="")
-        c.yview_moveto(self._scroll_frac)
+            x=GUTTER+days.index(today)*colw
+            y=(datetime.now()-D.day_start(today)).total_seconds()/3600*HOUR_H
+            p.setPen(QPen(_color(NOW),2)); p.drawLine(QPointF(x,y),QPointF(x+colw,y))
+            p.setBrush(_color(NOW)); p.setPen(Qt.PenStyle.NoPen); p.drawEllipse(QPointF(x,y),4,4)
 
-    # ---- mouse / keyboard ------------------------------------------------------------
-    def _find(self, which: str, e: tk.Event):
-        canvas = self.body if which == "body" else self.head
-        hits = self._hits if which == "body" else self._head_hits
-        x, y = canvas.canvasx(e.x), canvas.canvasy(e.y)
-        for x0, y0, x1, y1, kind, payload in reversed(hits):  # last drawn = on top
-            if x0 <= x <= x1 and y0 <= y <= y1:
-                return kind, payload, y
-        return None, None, y
+    def _find(self, canvas, pos):
+        y = pos.y() + (self.scroll.verticalScrollBar().value() if canvas is self.body and self.mode != "month" else 0)
+        x = pos.x()
+        hits = self._head_hits if canvas is self.head else self._hits
+        for rect, kind, payload in reversed(hits):
+            if rect.contains(x,y):
+                return kind,payload,y
+        return None,None,y
 
-    # ---- mouse: click to edit, drag to move ---------------------------------------------------
     @staticmethod
     def _snap(minutes: float) -> int:
-        return round(minutes / 15) * 15
+        return round(minutes/15)*15
 
-    def _column_at(self, cx: float) -> int | None:
-        if not self._col_days or cx < GUTTER:
-            return None
-        i = int((cx - GUTTER) // self._colw)
-        return i if 0 <= i < len(self._col_days) else None
-
-    def _day_at(self, cx: float, cy: float):
-        for x0, y0, x1, y1, kind, payload in self._hits:
-            if kind == "day" and x0 <= cx <= x1 and y0 <= cy <= y1:
-                return payload
+    def _day_at(self, x, y):
+        for rect,kind,payload in self._hits:
+            if kind=="day" and rect.contains(x,y): return payload
         return None
 
-    def _cancel_pending_edit(self) -> None:
-        if self._pending_edit:
-            self.after_cancel(self._pending_edit)
-            self._pending_edit = None
-
-    def _press(self, which: str, e: tk.Event) -> None:
-        canvas = self.body if which == "body" else self.head
-        canvas.focus_set()
-        self._cancel_pending_edit()
-        kind, payload, cy = self._find(which, e)
-        info = {"which": which, "kind": kind, "payload": payload, "x": e.x, "y": e.y}
-        if kind == "event" and which == "body" and not payload.all_day:
-            col = self._column_at(canvas.canvasx(e.x))
+    def _press(self, canvas, pos) -> None:
+        self._pending_edit.stop()
+        kind,payload,y=self._find(canvas,pos)
+        info={"canvas":canvas,"kind":kind,"payload":payload,"x":pos.x(),"y":pos.y()}
+        if kind=="event" and canvas is self.body and not payload.all_day and self.mode!="month":
+            col=self._column_at(pos.x())
             if col is not None:
-                day0 = D.day_start(self._col_days[col])
-                start_min = (max(payload.start, day0) - day0).total_seconds() / 60
-                info["grab"] = cy / HOUR_H * 60 - start_min  # where inside the block the mouse went down
-        self._press_info = info
-        self._dragging = False
+                day0=D.day_start(self._col_days[col])
+                info["grab"]=y/HOUR_H*60-(max(payload.start,day0)-day0).total_seconds()/60
+        self._press_info=info; self._dragging=False
 
-    def _motion(self, which: str, e: tk.Event) -> None:
+    def _motion(self, canvas, pos) -> None:
+        info=self._press_info
+        if info and info["kind"]=="event":
+            info["current"]=(canvas,pos)
+            self._dragging |= abs(pos.x()-info["x"])+abs(pos.y()-info["y"])>=5
+            if self._dragging: self.body.update(); self.head.update()
+
+    def _draw_ghost(self, painter, canvas):
         info = self._press_info
-        if not info or info["kind"] != "event":
+        if not self._dragging or not info or "current" not in info:
             return
-        if not self._dragging:
-            if abs(e.x - info["x"]) + abs(e.y - info["y"]) < 5:
-                return  # a small wobble is still a click
-            self._dragging = True
-        self._draw_ghost(which, e)
-
-    def _release(self, which: str, e: tk.Event) -> None:
-        info = self._press_info
-        if info is None:
+        target_canvas, pos = info["current"]
+        if target_canvas is not canvas:
             return
-        if self._dragging:
-            target = self._target(which, e)
-            self._press_info, self._dragging = None, False
-            self.body.delete("ghost")
-            self.head.delete("ghost")
-            if target:
-                self._apply_move(*target)
-            return
-        self._press_info = None
-        if info["kind"] == "event":
-            occ = info["payload"]
-            self._pending_edit = self.after(250, lambda: self._run_pending(occ))
-        elif info["kind"] == "more":
-            self.cursor = info["payload"]
-            self.set_mode("day")
-
-    def _run_pending(self, occ: Occurrence) -> None:
-        self._pending_edit = None
-        self.edit(occ)
-
-    def _target(self, which: str, e: tk.Event):
-        """(occurrence, new start) for where the dragged event would land, or None."""
-        info = self._press_info
-        if not info or info["kind"] != "event":
-            return None
-        occ = info["payload"]
-        canvas = self.body if which == "body" else self.head
-        cx, cy = canvas.canvasx(e.x), canvas.canvasy(e.y)
-        if self.mode == "month":
-            day = self._day_at(cx, cy)
-            return None if day is None else (occ, occ.start + timedelta(days=(day - occ.start.date()).days))
-        col = self._column_at(cx)
-        if col is None:
-            return None
-        day = self._col_days[col]
-        if occ.all_day or which == "head":
-            return occ, occ.start + timedelta(days=(day - occ.start.date()).days)
-        length = (occ.end - occ.start).total_seconds() / 60
-        minutes = self._snap(cy / HOUR_H * 60 - info.get("grab", 0))
-        minutes = max(0, min(minutes, max(0, 24 * 60 - int(length))))
-        return occ, D.day_start(day) + timedelta(minutes=minutes)
-
-    def _draw_ghost(self, which: str, e: tk.Event) -> None:
-        canvas = self.body if which == "body" else self.head
-        canvas.delete("ghost")
-        target = self._target(which, e)
+        target = self._target(target_canvas, pos)
         if not target:
             return
         occ, new_start = target
+        pen = QPen(_color(ACCENT), 2, Qt.PenStyle.DashLine)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
         if self.mode == "month":
-            for x0, y0, x1, y1, kind, payload in self._hits:
-                if kind == "day" and payload == new_start.date():
-                    canvas.create_rectangle(x0 + 2, y0 + 2, x1 - 2, y1 - 2, outline=T.ACCENT, width=2,
-                                            dash=(4, 2), tags="ghost")
+            day = new_start.date()
+            for rect, kind, payload in self._hits:
+                if kind == "day" and payload == day:
+                    painter.drawRect(rect.adjusted(2, 2, -2, -2))
                     break
-        elif which == "body" and self._col_days and new_start.date() in self._col_days:
+        elif canvas is self.body and new_start.date() in self._col_days:
             col = self._col_days.index(new_start.date())
             top = (new_start - D.day_start(new_start.date())).total_seconds() / 3600 * HOUR_H
             height = max((occ.end - occ.start).total_seconds() / 3600 * HOUR_H, 18)
-            x0 = GUTTER + col * self._colw + 3
-            canvas.create_rectangle(x0, top, x0 + self._colw - 6, top + height, outline=T.ACCENT, width=2,
-                                    dash=(4, 2), tags="ghost")
+            x = GUTTER + col * self._colw + 3
+            painter.drawRect(QRectF(x, top, self._colw - 6, height))
+        elif canvas is self.head and self._col_days:
+            col = (new_start.date() - self._col_days[0]).days
+            if 0 <= col < len(self._col_days):
+                x = GUTTER + col * self._colw + 3
+                y = 52
+                painter.drawRect(QRectF(x, y, self._colw - 6, CHIP_H))
 
-    def _apply_move(self, occ: Occurrence, new_start: datetime) -> None:
-        if new_start == occ.start:
+    def _release(self, canvas, pos) -> None:
+        info=self._press_info
+        if not info: return
+        if self._dragging:
+            target=self._target(canvas,pos)
+            self._press_info=None; self._dragging=False
+            if target: self._apply_move(*target)
             return
-        ev = self.cal.get_event(occ.event.id)
-        if ev is None:
-            return
+        self._press_info=None
+        if info["kind"]=="event":
+            self._pending_occ=info["payload"]; self._pending_edit.start(250)
+        elif info["kind"]=="more":
+            self.cursor=info["payload"]; self.set_mode("day")
+
+    def _finish_pending_edit(self) -> None:
+        if self._pending_occ: self.edit(self._pending_occ)
+        self._pending_occ=None
+
+    def _column_at(self,x):
+        if not self._col_days or x<GUTTER:return None
+        i=int((x-GUTTER)//self._colw)
+        return i if 0<=i<len(self._col_days) else None
+
+    def _target(self,canvas,pos):
+        info=self._press_info
+        if not info or info["kind"]!="event":return None
+        occ=info["payload"]; kind,payload,y=self._find(canvas,pos)
+        if self.mode=="month":
+            day=self._day_at(pos.x(),y)
+            return None if day is None else (occ,occ.start+timedelta(days=(day-occ.start.date()).days))
+        col=self._column_at(pos.x())
+        if col is None:return None
+        day=self._col_days[col]
+        if occ.all_day or canvas is self.head:
+            return occ,occ.start+timedelta(days=(day-occ.start.date()).days)
+        length=(occ.end-occ.start).total_seconds()/60
+        minutes=self._snap(y/HOUR_H*60-info.get("grab",0))
+        minutes=max(0,min(minutes,max(0,24*60-int(length))))
+        return occ,D.day_start(day)+timedelta(minutes=minutes)
+
+    def _double(self,canvas,pos):
+        self._pending_edit.stop(); self._pending_occ=None
+        kind,payload,y=self._find(canvas,pos)
+        if kind=="day": self.new_event(datetime.combine(payload,time(9)))
+        elif kind=="slot":
+            minutes=int(y/HOUR_H*60)//30*30
+            self.new_event(D.day_start(payload)+timedelta(minutes=min(minutes,23*60)))
+        elif kind=="allday": self.new_event(D.day_start(payload),all_day=True)
+
+    def _apply_move(self,occ,new_start):
+        if new_start==occ.start:return
+        ev=self.cal.get_event(occ.event.id)
+        if ev is None:return
         if ev.source:
-            messagebox.showinfo("Read-only",
-                                "This event comes from a calendar link, so it can't be moved here. "
-                                "Click it to read its details.", parent=self)
+            QMessageBox.information(self,"Read-only","This event comes from a calendar link, so it can't be moved here. Click it to read its details.")
             return
-        scope = "this"
+        scope="this"
         if ev.rrule:
-            scope = ask_scope(self, "Move")
-            if scope is None:
-                return
-        self.cal.move_occurrence(ev.id, occ.start, new_start, scope)
+            scope=ask_scope(self,"Move")
+            if scope is None:return
+        self.cal.move_occurrence(ev.id,occ.start,new_start,scope)
 
-
-    def _double(self, which: str, e: tk.Event) -> None:
-        self._cancel_pending_edit()
-        kind, payload, y = self._find(which, e)
-        if kind == "day":
-            self.new_event(datetime.combine(payload, time(9, 0)))
-        elif kind == "slot":
-            minutes = int(y / HOUR_H * 60) // 30 * 30
-            self.new_event(D.day_start(payload) + timedelta(minutes=min(minutes, 23 * 60)))
-        elif kind == "allday":
-            self.new_event(D.day_start(payload), all_day=True)
-
-    def _wheel(self, e: tk.Event) -> None:
-        if self.mode == "month":
-            return
-        up = getattr(e, "num", 0) == 4 or getattr(e, "delta", 0) > 0
-        self.body.yview_scroll(-3 if up else 3, "units")
-
-    # ---- actions ---------------------------------------------------------------------
-    def new_event(self, start: datetime | None = None, all_day: bool = False) -> None:
+    def new_event(self,start:datetime|None=None,all_day:bool=False):
         if start is None:
-            first, last = self._range()
-            today = date.today()
-            day = today if first <= today < last else self.cursor
-            if day == today:
-                start = D.now().replace(minute=0, second=0) + timedelta(hours=1)
-                if start.date() != today:  # late evening: keep it on today
-                    start = datetime.combine(today, time(23, 0))
-            else:
-                start = datetime.combine(day, time(9, 0))
-        EventDialog(self, self.cal, start=start, end=start + (timedelta(days=1) if all_day else timedelta(hours=1)),
-                    all_day=all_day)
+            first,last=self._range(); today=date.today()
+            day=today if first<=today<last else self.cursor
+            if day==today:
+                start=D.now().replace(minute=0,second=0)+timedelta(hours=1)
+                if start.date()!=today:start=datetime.combine(today,time(23))
+            else:start=datetime.combine(day,time(9))
+        EventDialog(self,self.cal,start=start,end=start+(timedelta(days=1) if all_day else timedelta(hours=1)),all_day=all_day)
 
-    def edit(self, occ: Occurrence) -> None:
-        event = self.cal.get_event(occ.event.id)
-        if event and event.source:  # linked events open for reading, never for editing
-            ReadOnlyEventDialog(self, self.cal, event, occ)
-            return
-        if event:
-            EventDialog(self, self.cal, event=event, occurrence=occ)
+    def edit(self,occ):
+        event=self.cal.get_event(occ.event.id)
+        if event and event.source:ReadOnlyEventDialog(self,self.cal,event,occ)
+        elif event:EventDialog(self,self.cal,event=event,occurrence=occ)
 
-    def open_subscriptions(self) -> None:
-        SubscriptionsWindow(self, self.cal)
+    def open_subscriptions(self): SubscriptionsWindow(self,self.cal)
+    def manage_categories(self): CategoryDialog(self,self.cal)
 
-    def manage_categories(self) -> None:
-        CategoryDialog(self, self.cal)
-
-    def import_ics(self) -> None:
-        path = filedialog.askopenfilename(parent=self, title="Import calendar file",
-                                          filetypes=[("iCalendar", "*.ics"), ("All files", "*.*")])
-        if not path:
-            return
-        try:
-            result = self.cal.import_ics(Path(path).read_text(encoding="utf-8-sig", errors="replace"))
+    def import_ics(self):
+        path,_=QFileDialog.getOpenFileName(self,"Import calendar file","","iCalendar (*.ics);;All files (*)")
+        if not path:return
+        try:result=self.cal.import_ics(Path(path).read_text(encoding="utf-8-sig",errors="replace"))
         except Exception as exc:
             logging.getLogger(__name__).exception("Calendar import failed")
-            messagebox.showerror("Import failed", f"That file couldn't be imported.\n\n{exc}", parent=self)
-        else:
-            messagebox.showinfo("Import finished", result.summary(), parent=self)
+            QMessageBox.critical(self,"Import failed",f"That file couldn't be imported.\n\n{exc}")
+        else:QMessageBox.information(self,"Import finished",result.summary())
 
-    def export_ics(self) -> None:
-        path = filedialog.asksaveasfilename(parent=self, title="Export calendar", defaultextension=".ics",
-                                            initialfile="cerealbox-calendar.ics", filetypes=[("iCalendar", "*.ics")])
+    def export_ics(self):
+        path,_=QFileDialog.getSaveFileName(self,"Export calendar","cerealbox-calendar.ics","iCalendar (*.ics)")
         if path:
+            if not Path(path).suffix:path += ".ics"
             Path(path).write_bytes(self.cal.export_ics().encode("utf-8"))
-            messagebox.showinfo("Export finished", f"Saved to {path}", parent=self)
+            QMessageBox.information(self,"Export finished",f"Saved to {path}")
 
 
-class SubscriptionDialog(tk.Toplevel):
-    def __init__(self, parent: tk.Misc, cal):
-        super().__init__(parent)
-        self.cal = cal
-        self.title("Add calendar link")
-        self.configure(bg=T.BG)
-        self.resizable(False, False)
-        self.name_var, self.url_var, self.every_var = tk.StringVar(), tk.StringVar(), tk.StringVar(value="60")
-        frm = ttk.Frame(self, padding=20)
-        frm.pack()
-        ttk.Label(frm, text="Add a calendar link", style="Title.TLabel").grid(row=0, column=0, columnspan=2, sticky="w")
-        ttk.Label(frm, text="Paste the .ics or webcal link from Google, Apple or Outlook. CerealBox checks it on the "
-                            "interval you choose. Events from a link are read-only here.",
-                  style="Muted.TLabel", wraplength=460, justify="left").grid(row=1, column=0, columnspan=2,
-                                                                             sticky="w", pady=(4, 12))
-        rows = [("Name", ttk.Entry(frm, textvariable=self.name_var, width=40)),
-                ("Link", ttk.Entry(frm, textvariable=self.url_var, width=40)),
-                ("Check every (min)", ttk.Entry(frm, textvariable=self.every_var, width=8))]
-        for i, (text, widget) in enumerate(rows, start=2):
-            ttk.Label(frm, text=text, style="Muted.TLabel").grid(row=i, column=0, sticky="e", padx=(0, 12), pady=5)
-            widget.grid(row=i, column=1, sticky="w", pady=5)
-        btns = ttk.Frame(frm)
-        btns.grid(row=len(rows) + 2, column=0, columnspan=2, sticky="e", pady=(12, 0))
-        ttk.Button(btns, text="Save and sync", style="Accent.TButton", command=self._save).pack(side="right")
-        ttk.Button(btns, text="Cancel", command=self.destroy).pack(side="right", padx=8)
-        self.bind("<Escape>", lambda _e: self.destroy())
-        _modal(self, parent)
+class SubscriptionDialog(QDialog):
+    def __init__(self,parent:QWidget,cal):
+        super().__init__(parent); self.cal=cal; self.setWindowTitle("Add calendar link")
+        root=QVBoxLayout(self)
+        root.addWidget(QLabel("Paste the .ics or webcal link from Google, Apple or Outlook. Events are read-only here."))
+        form=QVBoxLayout(); root.addLayout(form)
+        self.name=QLineEdit(); self.url=QLineEdit(); self.every=QLineEdit("60")
+        for label,field in (("Name",self.name),("Link",self.url),("Check every (min)",self.every)):
+            row=QHBoxLayout(); row.addWidget(QLabel(label)); row.addWidget(field); form.addLayout(row)
+        buttons=QDialogButtonBox()
+        save=buttons.addButton("Save and sync",QDialogButtonBox.ButtonRole.AcceptRole)
+        buttons.addButton(QDialogButtonBox.StandardButton.Cancel)
+        save.clicked.connect(self._save); buttons.rejected.connect(self.reject); root.addWidget(buttons)
+        _show(self,parent)
 
-    def _save(self) -> None:
+    def _save(self):
         try:
-            name = self.name_var.get().strip()
-            if not name:
-                raise ValueError("Give the calendar a name.")
-            url = normalize_url(self.url_var.get())
-            every = int(self.every_var.get() or 60)
-            if every < 5:
-                raise ValueError("Check at least every 5 minutes.")
+            name=self.name.text().strip()
+            if not name:raise ValueError("Give the calendar a name.")
+            url=normalize_url(self.url.text()); every=int(self.every.text() or 60)
+            if every<5:raise ValueError("Check at least every 5 minutes.")
         except ValueError as exc:
-            messagebox.showerror("Check the link", str(exc), parent=self)
-            return
-        sub = Subscription.new(name, url, every)
-        self.cal.save_subscription(sub)
-        self.cal.start_sync(sub.id)
-        self.destroy()
+            QMessageBox.critical(self,"Check the link",str(exc));return
+        sub=Subscription.new(name,url,every);self.cal.save_subscription(sub);self.cal.start_sync(sub.id);self.accept()
 
 
-class SubscriptionsWindow(tk.Toplevel):
-    def __init__(self, parent: tk.Misc, cal):
-        super().__init__(parent)
-        self.cal = cal
-        self.title("Calendar links")
-        self.configure(bg=T.BG)
-        frm = ttk.Frame(self, padding=20)
-        frm.pack()
-        ttk.Label(frm, text="Calendar links", style="Title.TLabel").pack(anchor="w")
-        ttk.Label(frm, text="Keep calendars from Google, Apple or Outlook up to date. Their events are read-only here.",
-                  style="Muted.TLabel").pack(anchor="w", pady=(2, 8))
-        self.tree = ttk.Treeview(frm, columns=("name", "every", "status"), show="headings", height=8,
-                                 selectmode="browse")
-        for key, text, width in (("name", "Name", 190), ("every", "Every", 90), ("status", "Status", 340)):
-            self.tree.heading(key, text=text, anchor="w")
-            self.tree.column(key, width=width, anchor="w")
-        self.tree.tag_configure("problem", foreground=T.NOW)
-        self.tree.pack(fill="x")
-        row = ttk.Frame(frm)
-        row.pack(fill="x", pady=8)
-        ttk.Button(row, text="Add link", style="Accent.TButton", command=self.add).pack(side="left")
-        ttk.Button(row, text="Sync now", command=self.sync_now).pack(side="left", padx=6)
-        ttk.Button(row, text="Remove", style="Danger.TButton", command=self.remove).pack(side="left")
-        ttk.Button(frm, text="Close", command=self.destroy).pack(anchor="e", pady=(10, 0))
-        self.bind("<Escape>", lambda _e: self.destroy())
-        self._subs = [("calendar.subscriptions.changed", self._refresh), ("calendar.synced", self._refresh)]
-        for pattern, handler in self._subs:
-            cal.api.on(pattern, handler)
-        self.bind("<Destroy>", self._cleanup, add="+")
-        self._refresh()
-        _modal(self, parent)
-
-    def _cleanup(self, event) -> None:
-        if event.widget is self:
-            for pattern, handler in self._subs:
-                self.cal.api.off(pattern, handler)
+class SubscriptionsWindow(QDialog):
+    def __init__(self,parent:QWidget,cal):
+        super().__init__(parent);self.cal=cal;self.setWindowTitle("Calendar links")
+        root=QVBoxLayout(self)
+        root.addWidget(QLabel("Keep calendars from Google, Apple or Outlook up to date. Their events are read-only here."))
+        from PyQt6.QtWidgets import QTableWidget,QTableWidgetItem
+        self.table=QTableWidget(0,3);self.table.setHorizontalHeaderLabels(["Name","Every","Status"])
+        self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers);root.addWidget(self.table)
+        self._items=QTableWidgetItem
+        row=QHBoxLayout();root.addLayout(row)
+        for text,fn in (("Add link",self.add),("Sync now",self.sync_now),("Remove",self.remove),("Close",self.accept)):
+            b=QPushButton(text);b.clicked.connect(fn);row.addWidget(b)
+        self._subs=[("calendar.subscriptions.changed",self._refresh),("calendar.synced",self._refresh)]
+        for pattern,handler in self._subs:cal.api.on(pattern,handler)
+        self.finished.connect(self._cleanup);self._refresh();_show(self,parent)
 
     @staticmethod
-    def _status(s: Subscription) -> str:
-        if s.last_error:
-            return f"Problem: {s.last_error[:60]}"
-        if s.last_sync:
-            return f"Up to date · checked {s.last_sync:%b %d, %H:%M}"
+    def _status(s:Subscription)->str:
+        if s.last_error:return f"Problem: {s.last_error[:60]}"
+        if s.last_sync:return f"Up to date · checked {s.last_sync:%b %d, %H:%M}"
         return "Checking…" if s.last_attempt else "Not checked yet"
 
-    def _refresh(self, *_a, **_k) -> None:
-        if not self.winfo_exists():
-            return
-        self.tree.delete(*self.tree.get_children())
+    def _refresh(self,*_a,**_k):
+        from PyQt6.QtWidgets import QTableWidgetItem
+        self.table.setRowCount(0)
         for s in self.cal.subscriptions():
-            self.tree.insert("", "end", iid=s.id, tags=("problem",) if s.last_error else (),
-                             values=(s.name, f"{s.interval_min} min", self._status(s)))
+            row=self.table.rowCount();self.table.insertRow(row)
+            for col,text in enumerate((s.name,f"{s.interval_min} min",self._status(s))):
+                self.table.setItem(row,col,QTableWidgetItem(text))
+            self.table.item(row,0).setData(Qt.ItemDataRole.UserRole,s.id)
 
-    def add(self) -> None:
-        SubscriptionDialog(self, self.cal)
+    def _selected_id(self):
+        row=self.table.currentRow()
+        return self.table.item(row,0).data(Qt.ItemDataRole.UserRole) if row>=0 else None
 
-    def sync_now(self) -> None:
-        sel = self.tree.selection()
-        if sel:
-            self.cal.start_sync(sel[0])
+    def _cleanup(self):
+        for pattern,handler in self._subs:self.cal.api.off(pattern,handler)
 
-    def remove(self) -> None:
-        sel = self.tree.selection()
-        if sel and messagebox.askyesno("Remove link", "Remove this calendar link and its events?", parent=self):
-            self.cal.remove_subscription(sel[0])
+    def add(self):SubscriptionDialog(self,self.cal)
+    def sync_now(self):
+        if self._selected_id():self.cal.start_sync(self._selected_id())
+    def remove(self):
+        sub_id=self._selected_id()
+        if sub_id and QMessageBox.question(self,"Remove link","Remove this calendar link and its events?")==QMessageBox.StandardButton.Yes:
+            self.cal.remove_subscription(sub_id)

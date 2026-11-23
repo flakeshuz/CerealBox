@@ -85,7 +85,7 @@ class CalendarModule(Module):
 
     def create_view(self, parent):
         from .ui import (
-            CalendarView,  # imported lazily so the engine works without tkinter
+            CalendarView,  # imported lazily so the engine remains UI-independent
         )
 
         return CalendarView(parent, self)

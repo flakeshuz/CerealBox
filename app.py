@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import os
 from pathlib import Path
+import sys
 
 
 def default_vault_path() -> Path:
@@ -18,13 +19,22 @@ def default_vault_path() -> Path:
     return vault_dir / "vault.cerealbox"
 
 
-def main(argv: list[str] | None = None) -> None:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="cerealbox", description="Fresh, local, encrypted life management.")
     parser.add_argument("--vault", type=Path, default=None, help=f"vault file (default: {default_vault_path()})")
     args = parser.parse_args(argv)
 
-    from .ui.shell import Shell  # imported here so --help works without a display
+    from PyQt6.QtWidgets import QApplication
 
+    from .ui import theme
+    from .ui.shell import Shell
+
+    app = QApplication.instance() or QApplication([sys.argv[0]])
+    app.setApplicationName("CerealBox")
+    app.setOrganizationName("CerealBox")
+    theme.apply(app)
     shell = Shell(args.vault or default_vault_path())
-    if shell.start():
-        shell.mainloop()
+    if not shell.start():
+        return 0
+    shell.show()
+    return app.exec()

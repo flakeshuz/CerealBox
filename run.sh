@@ -12,5 +12,10 @@ else
     exit 1
 fi
 
+if ! "$python" -c 'import sys; raise SystemExit(sys.version_info < (3, 11))'; then
+    echo "Python 3.11 or newer is required." >&2
+    exit 1
+fi
+
 "$python" -m pip install --user .
 exec "$python" main.py "$@"

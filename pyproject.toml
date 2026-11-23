@@ -7,7 +7,7 @@ name = "cerealbox"
 version = "0.1.0"
 description = "A local, encrypted personal workspace"
 requires-python = ">=3.11"
-dependencies = ["cryptography>=41"]
+dependencies = ["cryptography>=41", "PyQt6>=6.6"]
 
 [project.scripts]
 cerealbox = "CerealBox.app:main"

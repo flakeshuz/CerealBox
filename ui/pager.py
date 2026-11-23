@@ -1,58 +1,32 @@
-"""Shows one screen at a time. It has the same small surface as ttk.Notebook (add, select, tab, tabs, index)
-so screens and tests don't need to care, but it draws no tab row: the sidebar is the navigation."""
+"""A tabless Qt page stack used with the workspace sidebar."""
 from __future__ import annotations
 
-import tkinter as tk
-
-from . import theme as T
+from PyQt6.QtWidgets import QStackedWidget, QWidget
 
 
-class Pager(tk.Frame):
-    def __init__(self, parent: tk.Misc):
-        super().__init__(parent, bg=T.BG)
-        self._pages: list[dict] = []
-        self._current: dict | None = None
-        self._listeners: list = []
+class Pager(QStackedWidget):
+    """Keep the former small notebook-style API while using Qt widgets."""
 
-    def add(self, widget: tk.Misc, text: str = "") -> None:
-        self._pages.append({"name": str(widget), "text": text, "widget": widget})
-        widget.pack_forget()
-        if self._current is None:
-            self.select(widget)
+    def __init__(self, parent: QWidget | None = None):
+        super().__init__(parent)
+        self._titles: list[str] = []
 
-    def tabs(self) -> list[str]:
-        return [p["name"] for p in self._pages]
+    def add(self, widget: QWidget, text: str = "") -> None:
+        self._titles.append(text)
+        self.addWidget(widget)
 
-    def _page(self, key) -> dict:
-        name = str(key)
-        for p in self._pages:
-            if p["name"] == name:
-                return p
-        raise KeyError(name)
+    def tabs(self) -> list[QWidget]:
+        return [self.widget(i) for i in range(self.count())]
 
-    def tab(self, key, option: str | None = None, **_kw):
-        if option == "text":
-            return self._page(key)["text"]
-        return None
+    def tab(self, key: QWidget | int, option: str | None = None):
+        index = key if isinstance(key, int) else self.index(key)
+        return self._titles[index] if option == "text" else None
 
-    def index(self, key) -> int:
-        return self.tabs().index(str(key))
+    def index(self, key: QWidget) -> int:
+        return self.indexOf(key)
 
-    def select(self, key=None):
+    def select(self, key: QWidget | int | None = None):
         if key is None:
-            return self._current["name"] if self._current else ""
-        page = self._page(key)
-        if page is not self._current:
-            if self._current:
-                self._current["widget"].pack_forget()
-            page["widget"].pack(fill="both", expand=True)
-            self._current = page
-            for fn in list(self._listeners):
-                fn()
+            return self.currentWidget()
+        self.setCurrentIndex(key if isinstance(key, int) else self.index(key))
         return None
-
-    def bind(self, sequence=None, func=None, add=None):
-        if sequence == "<<NotebookTabChanged>>":
-            self._listeners.append(lambda: func(None))
-            return None
-        return super().bind(sequence, func, add)

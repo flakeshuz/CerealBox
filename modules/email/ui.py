@@ -1,31 +1,46 @@
 """Email UI scaffold"""
 from __future__ import annotations
 
-import tkinter as tk
-from tkinter import ttk
+from PyQt6.QtWidgets import (
+    QHBoxLayout,
+    QLabel,
+    QListWidget,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
-from ...ui.components import configure_listbox, page_header
 
-
-class EmailView(ttk.Frame):
+class EmailView(QWidget):
     def __init__(self, parent, mod):
         super().__init__(parent)
         self.mod = mod
-        header, actions = page_header(self, "Email")
-        ttk.Button(actions, text="Receive sample", command=self._receive_sample).pack(side="left")
-        ttk.Button(actions, text="Refresh", style="Accent.TButton", command=self.refresh).pack(side="left", padx=(6, 0))
-        self.listbox = tk.Listbox(self)
-        configure_listbox(self.listbox)
-        self.listbox.pack(fill="both", expand=True, padx=24, pady=(4, 24))
+
+        layout = QVBoxLayout(self)
+        heading = QHBoxLayout()
+        heading.addWidget(QLabel("Email"))
+        heading.addStretch()
+        receive_button = QPushButton("Receive sample")
+        receive_button.clicked.connect(self._receive_sample)
+        refresh_button = QPushButton("Refresh")
+        refresh_button.clicked.connect(self.refresh)
+        heading.addWidget(receive_button)
+        heading.addWidget(refresh_button)
+        layout.addLayout(heading)
+
+        self.listbox = QListWidget()
+        layout.addWidget(self.listbox)
         self.refresh()
 
     def refresh(self):
-        self.listbox.delete(0, tk.END)
-        for e in (self.mod.list_inbox() or []):
-            subj = e.get("subject", "No subject")
-            status = "Read" if e.get("read") else "Unread"
-            self.listbox.insert(tk.END, f"{subj} — {status}")
+        self.listbox.clear()
+        for email in (self.mod.list_inbox() or []):
+            subject = email.get("subject", "No subject")
+            status = "Read" if email.get("read") else "Unread"
+            self.listbox.addItem(f"{subject} — {status}")
 
     def _receive_sample(self):
-        self.mod.receive_email("bot@example.com", "me@example.com", "Sample", "Body of sample email")
+        self.mod.receive_email(
+            "bot@example.com", "me@example.com", "Sample", "Body of sample email"
+        )
         self.refresh()

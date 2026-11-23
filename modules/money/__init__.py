@@ -68,7 +68,7 @@ class MoneyModule(Module):
         }
 
     def create_view(self, parent):
-        from .ui import MoneyView  # imported lazily so the engine works without tkinter
+        from .ui import MoneyView  # imported lazily so the engine remains UI-independent
 
         return MoneyView(parent, self)
 

@@ -1,66 +1,72 @@
-"""Contacts UI scaffold"""
+"""Contacts PyQt6 view."""
 from __future__ import annotations
 
-import tkinter as tk
-from tkinter import ttk
+from PyQt6.QtWidgets import (
+    QDialog, QDialogButtonBox, QHBoxLayout, QLabel, QLineEdit,
+    QListWidget, QPushButton, QVBoxLayout, QWidget,
+)
 
-from ...ui.components import configure_listbox, page_header
 
-class ContactsView(ttk.Frame):
-    def __init__(self, parent, mod):
+class ContactsView(QWidget):
+    def __init__(self, parent: QWidget, mod):
         super().__init__(parent)
         self.mod = mod
-        header, actions = page_header(self, "Contacts")
-        ttk.Button(actions, text="Birthdays", command=self.toggle_birthdays).pack(side="left", padx=(0, 6))
-        ttk.Button(actions, text="Add Contact", style="Accent.TButton", command=self.add).pack(side="left")
-        self.listbox = tk.Listbox(self)
-        configure_listbox(self.listbox)
-        self.listbox.pack(fill="both", expand=True, padx=24, pady=(4, 24))
+        root = QVBoxLayout(self)
+        root.setContentsMargins(24, 16, 24, 24)
+        header = QHBoxLayout()
+        title = QLabel("Contacts")
+        title.setStyleSheet("font-size: 20px; font-weight: bold")
+        header.addWidget(title)
+        header.addStretch()
+        birthdays = QPushButton("Birthdays")
+        birthdays.clicked.connect(self.toggle_birthdays)
+        header.addWidget(birthdays)
+        add = QPushButton("Add Contact")
+        add.clicked.connect(self.add)
+        header.addWidget(add)
+        root.addLayout(header)
         self.birthdays_visible = False
-        self.birthdays_frame = ttk.Frame(self)
-        self.birthdays_frame.pack(fill="x", padx=4, pady=4)
-        self.birthdays_frame.pack_forget()
-        ttk.Label(self.birthdays_frame, text="Birthdays this year:", style="Muted.TLabel").pack(anchor="w")
-        self.birthdays_list = tk.Listbox(self.birthdays_frame)
-        configure_listbox(self.birthdays_list)
-        self.birthdays_list.pack(fill="both", expand=True)
+        self.birthdays_frame = QWidget()
+        birthdays_layout = QVBoxLayout(self.birthdays_frame)
+        birthdays_layout.addWidget(QLabel("Birthdays this year:"))
+        self.birthdays_list = QListWidget()
+        birthdays_layout.addWidget(self.birthdays_list)
+        root.addWidget(self.birthdays_frame)
+        self.birthdays_frame.hide()
+        self.listbox = QListWidget()
+        root.addWidget(self.listbox)
         self.refresh()
 
     def toggle_birthdays(self):
         self.birthdays_visible = not self.birthdays_visible
+        self.birthdays_frame.setVisible(self.birthdays_visible)
         if self.birthdays_visible:
-            self.birthdays_frame.pack(fill="x", padx=4, pady=4)
             self._refresh_birthdays()
-        else:
-            self.birthdays_frame.pack_forget()
 
     def _refresh_birthdays(self):
-        self.birthdays_list.delete(0, tk.END)
+        self.birthdays_list.clear()
         for b in (self.mod.birthdays_entries() or []):
-            name = b.get("name", "")
-            when = b.get("birthday", "")
-            self.birthdays_list.insert(tk.END, f"{name} - {when}")
+            self.birthdays_list.addItem(f"{b.get('name', '')} - {b.get('birthday', '')}")
 
     def refresh(self):
-        self.listbox.delete(0, tk.END)
+        self.listbox.clear()
         for c in (self.mod.list_contacts() or []):
-            self.listbox.insert(tk.END, c.get("name", "Unknown"))
+            self.listbox.addItem(c.get("name", "Unknown"))
         self._refresh_birthdays()
 
     def add(self):
-        dlg = tk.Toplevel(self)
-        dlg.title("Add Contact")
-        frm = ttk.Frame(dlg, padding=12)
-        frm.pack()
-        tk.Label(frm, text="Name").grid(row=0, column=0, sticky="e")
-        name_var = tk.StringVar()
-        ttk.Entry(frm, textvariable=name_var).grid(row=0, column=1)
-        def save():
-            name = name_var.get().strip()
-            if name:
-                self.mod.add_contact(name)
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Add Contact")
+        layout = QVBoxLayout(dlg)
+        name = QLineEdit()
+        layout.addWidget(QLabel("Name"))
+        layout.addWidget(name)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(dlg.accept)
+        buttons.rejected.connect(dlg.reject)
+        layout.addWidget(buttons)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            value = name.text().strip()
+            if value:
+                self.mod.add_contact(value)
                 self.refresh()
-                dlg.destroy()
-        ttk.Button(frm, text="Save", command=save).grid(row=1, column=0, columnspan=2)
-        dlg.transient(self.winfo_toplevel())
-        dlg.grab_set(); dlg.focus_set(); dlg.wait_window()

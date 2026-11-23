@@ -89,3 +89,10 @@ Every screen follows the same visual rhythm:
 - Consistent 24px page gutters
 - Shared surface, text, line, and state colors
 - One list and dialog treatment across life areas
+
+## Desktop Frontend
+
+The desktop UI uses PyQt6. The application shell owns navigation, shared styling,
+keyboard shortcuts, and vault-level actions; each life-area screen is a Qt widget
+that plugs into the same page stack. Keep navigation searchable and make common
+actions available from the screen where they are useful.

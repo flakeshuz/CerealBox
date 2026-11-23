@@ -9,7 +9,7 @@ if errorlevel 1 (
     set "PYTHON=py -3"
 )
 
-%PYTHON% --version
+%PYTHON% -c "import sys; raise SystemExit(sys.version_info < (3, 11))"
 if errorlevel 1 (
     echo Python 3.11 or newer is required but was not found.
     exit /b 1

@@ -27,6 +27,6 @@ class Module:
         """Callables other modules may use, exposed as '<module name>.<key>'."""
         return {}
 
-    def create_view(self, parent):  # -> tkinter widget | None
-        """Return this module's UI (a tkinter widget) or None if it has no screen."""
+    def create_view(self, parent):  # -> PyQt6 QWidget | None
+        """Return this module's Qt UI or None if it has no screen."""
         return

@@ -1,30 +1,46 @@
 """Health UI scaffold"""
 from __future__ import annotations
 
-import tkinter as tk
-from tkinter import ttk
+from PyQt6.QtWidgets import (
+    QDialog,
+    QDialogButtonBox,
+    QFormLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QListWidget,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
-from ...ui.components import configure_listbox, page_header
 
-
-class HealthView(ttk.Frame):
+class HealthView(QWidget):
     def __init__(self, parent, mod):
         super().__init__(parent)
         self.mod = mod
-        header, actions = page_header(self, "Health")
-        ttk.Button(actions, text="Add appointment", style="Accent.TButton", command=self.add_appointment).pack(side="left")
-        self.appt_frame = ttk.Frame(self)
-        self.appt_frame.pack(fill="both", expand=True, pady=4)
-        ttk.Label(self.appt_frame, text="Appointments", style="Muted.TLabel").pack(anchor="w")
-        self.appt_list = tk.Listbox(self.appt_frame)
-        configure_listbox(self.appt_list)
-        self.appt_list.pack(fill="both", expand=True, pady=4)
-        self.med_frame = ttk.Frame(self)
-        self.med_frame.pack(fill="both", expand=True, pady=4)
-        ttk.Label(self.med_frame, text="Medications", style="Muted.TLabel").pack(anchor="w")
-        self.med_list = tk.Listbox(self.med_frame)
-        configure_listbox(self.med_list)
-        self.med_list.pack(fill="both", expand=True, pady=4)
+
+        layout = QVBoxLayout(self)
+        heading = QHBoxLayout()
+        heading.addWidget(QLabel("Health"))
+        heading.addStretch()
+        add_button = QPushButton("Add appointment")
+        add_button.clicked.connect(self.add_appointment)
+        heading.addWidget(add_button)
+        layout.addLayout(heading)
+
+        lists = QHBoxLayout()
+        self.appt_list = QListWidget()
+        self.med_list = QListWidget()
+        appointments = QVBoxLayout()
+        appointments.addWidget(QLabel("Appointments"))
+        appointments.addWidget(self.appt_list)
+        medications = QVBoxLayout()
+        medications.addWidget(QLabel("Medications"))
+        medications.addWidget(self.med_list)
+        lists.addLayout(appointments)
+        lists.addLayout(medications)
+        layout.addLayout(lists)
         self.refresh()
 
     def refresh(self):
@@ -32,33 +48,38 @@ class HealthView(ttk.Frame):
         self._refresh_medications()
 
     def _refresh_appointments(self):
-        self.appt_list.delete(0, tk.END)
-        for a in (self.mod.list_appointments() or []):
-            self.appt_list.insert(tk.END, f"{a.get('title','')} - {a.get('date','')}" )
+        self.appt_list.clear()
+        for appointment in (self.mod.list_appointments() or []):
+            self.appt_list.addItem(
+                f"{appointment.get('title', '')} - {appointment.get('date', '')}"
+            )
 
     def _refresh_medications(self):
-        self.med_list.delete(0, tk.END)
-        for m in (self.mod.list_medications() or []):
-            self.med_list.insert(tk.END, f"{m.get('name','')} - {m.get('dose','')}" )
+        self.med_list.clear()
+        for medication in (self.mod.list_medications() or []):
+            self.med_list.addItem(
+                f"{medication.get('name', '')} - {medication.get('dose', '')}"
+            )
 
     def add_appointment(self):
-        dlg = tk.Toplevel(self)
-        dlg.title("Add appointment")
-        frm = ttk.Frame(dlg, padding=12)
-        frm.pack()
-        tk.Label(frm, text="Title").grid(row=0, column=0, sticky="e")
-        title_var = tk.StringVar()
-        ttk.Entry(frm, textvariable=title_var).grid(row=0, column=1)
-        tk.Label(frm, text="Date").grid(row=1, column=0, sticky="e")
-        date_var = tk.StringVar()
-        ttk.Entry(frm, textvariable=date_var).grid(row=1, column=1)
-        def save():
-            t = title_var.get().strip()
-            d = date_var.get().strip()
-            if t and d:
-                self.mod.add_appointment(t, d)
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Add appointment")
+        form = QFormLayout(dialog)
+        title_input = QLineEdit(dialog)
+        date_input = QLineEdit(dialog)
+        form.addRow("Title", title_input)
+        form.addRow("Date", date_input)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Save
+            | QDialogButtonBox.StandardButton.Cancel,
+            parent=dialog,
+        )
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        form.addRow(buttons)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            title = title_input.text().strip()
+            date = date_input.text().strip()
+            if title and date:
+                self.mod.add_appointment(title, date)
                 self._refresh_appointments()
-                dlg.destroy()
-        ttk.Button(frm, text="Save", command=save).grid(row=2, column=0, columnspan=2)
-        dlg.transient(self.winfo_toplevel())
-        dlg.grab_set(); dlg.focus_set(); dlg.wait_window()
