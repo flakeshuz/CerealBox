@@ -54,6 +54,7 @@ class Sidebar(QFrame):
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         body = QWidget()
+        body.setObjectName("sidebarBody")
         self._body_layout = QVBoxLayout(body)
         self._body_layout.setContentsMargins(0, 6, 0, 6)
         self._body_layout.setSpacing(2)

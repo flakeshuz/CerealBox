@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QKeySequence, QShortcut
+from PyQt6.QtGui import QColor, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QButtonGroup, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout,
     QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton, QRadioButton,
@@ -16,6 +16,7 @@ from ...core.rrule import FREQ_BY_LABEL as FREQ
 from ...core.rrule import LABEL_BY_FREQ as CHOICE_OF_FREQ
 from ...core.rrule import REPEAT_CHOICES, REPEAT_NONE, WEEKDAY_CODES, build_rrule, parse_rrule
 from ...core.rrule import REPEAT_CUSTOM as CUSTOM
+from ...ui import theme as T
 from . import is_overdue
 from .models import PRIORITY_CODES, PRIORITY_NAMES, Task
 
@@ -159,9 +160,9 @@ class TasksView(QWidget):
                 item = QTableWidgetItem(value)
                 item.setData(Qt.ItemDataRole.UserRole, task.id)
                 if task.done:
-                    item.setForeground(Qt.GlobalColor.gray)
+                    item.setForeground(QColor(T.FAINT))
                 elif is_overdue(task, now):
-                    item.setForeground(Qt.GlobalColor.red)
+                    item.setForeground(QColor(T.NOW))
                 self.table.setItem(row, col, item)
         open_now = self.mod.list("open", "", now)
         overdue = sum(is_overdue(task, now) for task in open_now)

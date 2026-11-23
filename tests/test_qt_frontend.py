@@ -11,10 +11,12 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1].parent))
 
 from PyQt6.QtCore import QMimeData, QPointF, Qt
-from PyQt6.QtGui import QDropEvent
+from PyQt6.QtGui import QDropEvent, QPalette
 from PyQt6.QtWidgets import QApplication, QMessageBox, QWidget
 
 from CerealBox.core import Vault
+from CerealBox.modules.calendar.models import DEFAULT_CATEGORIES
+from CerealBox.modules.calendar.ui import _on_color
 from CerealBox.modules.dashboard import reorder
 from CerealBox.modules.dashboard.ui import DASHBOARD_CARD_MIME, DashboardCardFrame
 from CerealBox.modules.docsvault_ui import document_bytes, decoded_text
@@ -87,6 +89,32 @@ class QtFrontendTests(unittest.TestCase):
         ):
             with self.subTest(foreground=foreground, background=background):
                 self.assertGreaterEqual(self._contrast_ratio(foreground, background), 4.5)
+        T.apply(self.app)
+        palette = self.app.palette()
+        self.assertEqual(
+            palette.color(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text).name(),
+            T.FAINT.lower(),
+        )
+        self.assertEqual(
+            palette.color(QPalette.ColorGroup.Active, QPalette.ColorRole.Window).name(),
+            T.BG.lower(),
+        )
+        for _slug, _name, background in DEFAULT_CATEGORIES:
+            foreground = _on_color(background).name()
+            with self.subTest(category_background=background):
+                self.assertGreaterEqual(self._contrast_ratio(foreground, background), 4.5)
+
+    def test_dashboard_card_uses_light_surface(self) -> None:
+        T.apply(self.app)
+        frame = DashboardCardFrame("today", lambda *_: None)
+        frame.setObjectName("dashboardCard")
+        frame.resize(200, 100)
+        frame.show()
+        self.app.processEvents()
+        try:
+            self.assertEqual(frame.grab().toImage().pixelColor(100, 50).name(), T.SURFACE.lower())
+        finally:
+            frame.close()
 
     def test_registered_module_screens_are_qt_widgets(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

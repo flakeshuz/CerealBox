@@ -14,14 +14,15 @@ from PyQt6.QtWidgets import (
 )
 
 from ...core import dates as D
+from ...ui import theme as T
 from .dialogs import CategoryDialog, EventDialog, ReadOnlyEventDialog, ask_scope
 from .models import Occurrence
 from .subscriptions import Subscription, normalize_url
 
 HOUR_H, GUTTER, CHIP_H = 52, 58, 18
 INK, MUTED, FAINT, LINE, SURFACE, DIM, ACCENT, TODAY_BG, NOW = (
-    "#252a32", "#747c88", "#a3a9b2", "#d9dde2", "#ffffff", "#f4f5f7",
-    "#3977d5", "#edf4ff", "#d64a45",
+    T.INK, T.MUTED, T.FAINT, T.LINE, T.SURFACE, T.DIM,
+    T.ACCENT, T.TODAY_BG, T.NOW,
 )
 
 
@@ -36,14 +37,24 @@ def _tint(value: str, amount: float) -> QColor:
                   int(c.blue() * amount + 255 * (1 - amount)))
 
 
-def _shade(value: str, amount: float) -> QColor:
-    c = _color(value)
-    return QColor(int(c.red() * amount), int(c.green() * amount), int(c.blue() * amount))
-
-
 def _on_color(value: str) -> QColor:
     c = _color(value)
-    return QColor("#ffffff" if (c.red() * 299 + c.green() * 587 + c.blue() * 114) / 1000 < 145 else "#20242a")
+    white = QColor("#ffffff")
+    dark = _color(INK)
+
+    def contrast(foreground: QColor, background: QColor) -> float:
+        def luminance(color: QColor) -> float:
+            channels = (color.redF(), color.greenF(), color.blueF())
+            linear = (
+                value / 12.92 if value <= 0.04045 else ((value + 0.055) / 1.055) ** 2.4
+                for value in channels
+            )
+            return sum(value * weight for value, weight in zip(linear, (0.2126, 0.7152, 0.0722)))
+
+        high, low = sorted((luminance(foreground), luminance(background)), reverse=True)
+        return (high + 0.05) / (low + 0.05)
+
+    return white if contrast(white, c) >= contrast(dark, c) else dark
 
 
 class _CalendarCanvas(QWidget):
@@ -440,13 +451,15 @@ class CalendarView(QWidget):
                 y0=(s-day0).total_seconds()/3600*HOUR_H+1
                 y1=(e-day0).total_seconds()/3600*HOUR_H-1
                 color=self.cal.color_of(occ.event)
-                p.fillRect(QRectF(bx0,y0,bx1-bx0,y1-y0),_tint(color,.8))
+                background = _tint(color, .8)
+                p.fillRect(QRectF(bx0,y0,bx1-bx0,y1-y0),background)
                 p.fillRect(QRectF(bx0,y0,4,y1-y0),_color(color))
-                self._text(p,bx0+9,y0+14,self._fit(p,occ.title,bx1-bx0-12),_shade(color,.55).name(),9,True)
+                text_color = _on_color(background.name()).name()
+                self._text(p,bx0+9,y0+14,self._fit(p,occ.title,bx1-bx0-12),text_color,9,True)
                 if y1-y0>=38:
                     sub=f"{D.fmt_time(occ.start)} – {D.fmt_time(occ.end)}"
                     if occ.event.location: sub+=f"  ·  {occ.event.location}"
-                    self._text(p,bx0+9,y0+29,self._fit(p,sub,bx1-bx0-12),_shade(color,.4).name(),9)
+                    self._text(p,bx0+9,y0+29,self._fit(p,sub,bx1-bx0-12),text_color,9)
                 self._hits.append((QRectF(bx0,y0,bx1-bx0,y1-y0),"event",occ))
         if today in days:
             x=GUTTER+days.index(today)*colw

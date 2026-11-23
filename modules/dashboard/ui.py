@@ -415,6 +415,7 @@ class DashboardView(QWidget):
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
         self.area = QWidget()
+        self.area.setObjectName("dashboardArea")
         self.grid = QGridLayout(self.area)
         self.grid.setContentsMargins(14, 4, 14, 14)
         self.scroll.setWidget(self.area)
@@ -470,6 +471,7 @@ class DashboardView(QWidget):
             if span == 2 and col == 1:
                 row, col = row + 1, 0
             card_widget = DashboardCardFrame(key, self._reorder_cards, self.area)
+            card_widget.setObjectName("dashboardCard")
             card_layout = QVBoxLayout(card_widget)
             card_layout.setContentsMargins(22, 18, 22, 18)
             head = QHBoxLayout()

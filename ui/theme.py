@@ -1,7 +1,7 @@
 """Shared visual tokens and application styling for the Qt frontend."""
 from __future__ import annotations
 
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QColor, QFont, QPalette
 from PyQt6.QtWidgets import QApplication, QDialog, QWidget
 
 BG = "#FFF7E6"
@@ -29,10 +29,58 @@ DENSITY_OPTIONS = ("comfortable", "dense")
 def apply(app: QApplication) -> None:
     app.setStyle("Fusion")
     app.setFont(QFont(FAMILY, SIZE))
+    palette = QPalette()
+    normal_colors = {
+        QPalette.ColorRole.Window: BG,
+        QPalette.ColorRole.WindowText: INK,
+        QPalette.ColorRole.Base: SURFACE,
+        QPalette.ColorRole.AlternateBase: DIM,
+        QPalette.ColorRole.ToolTipBase: INK,
+        QPalette.ColorRole.ToolTipText: "#FFFFFF",
+        QPalette.ColorRole.Text: INK,
+        QPalette.ColorRole.Button: CONTROL,
+        QPalette.ColorRole.ButtonText: INK,
+        QPalette.ColorRole.BrightText: "#FFFFFF",
+        QPalette.ColorRole.Highlight: ACCENT_SOFT,
+        QPalette.ColorRole.HighlightedText: INK,
+        QPalette.ColorRole.Link: ACCENT_INK,
+        QPalette.ColorRole.LinkVisited: ACCENT_INK,
+        QPalette.ColorRole.Mid: MUTED,
+        QPalette.ColorRole.Midlight: LINE_SOFT,
+        QPalette.ColorRole.Dark: LINE,
+        QPalette.ColorRole.Light: SURFACE,
+        QPalette.ColorRole.Shadow: LINE,
+        QPalette.ColorRole.PlaceholderText: FAINT,
+    }
+    for group in (QPalette.ColorGroup.Active, QPalette.ColorGroup.Inactive):
+        for role, color in normal_colors.items():
+            palette.setColor(group, role, QColor(color))
+    for role, color in normal_colors.items():
+        palette.setColor(QPalette.ColorGroup.Disabled, role, QColor(color))
+    for role in (
+        QPalette.ColorRole.WindowText,
+        QPalette.ColorRole.Text,
+        QPalette.ColorRole.ButtonText,
+        QPalette.ColorRole.PlaceholderText,
+    ):
+        palette.setColor(QPalette.ColorGroup.Disabled, role, QColor(FAINT))
+    app.setPalette(palette)
     app.setStyleSheet(f"""
         QWidget {{ color: {INK}; font-family: "{FAMILY}"; font-size: {SIZE}pt; }}
         QMainWindow, QDialog {{ background: {BG}; }}
         QFrame#sidebar {{ background: {SURFACE}; border-right: 1px solid {LINE}; }}
+        QScrollArea {{ background: {BG}; border: 0; }}
+        QScrollArea::viewport {{ background: {BG}; }}
+        QFrame#sidebar QScrollArea, QFrame#sidebar QScrollArea::viewport {{
+            background: {SURFACE};
+        }}
+        QWidget#sidebarBody {{ background: {SURFACE}; }}
+        QMenuBar {{ background: {SURFACE}; color: {INK}; }}
+        QMenuBar::item {{ background: transparent; padding: 5px 8px; }}
+        QMenuBar::item:selected {{ background: {ACCENT_SOFT}; color: {ACCENT_INK}; }}
+        QMenu {{ background: {SURFACE}; color: {INK}; border: 1px solid {LINE}; }}
+        QMenu::item {{ padding: 5px 24px 5px 8px; }}
+        QMenu::item:selected {{ background: {ACCENT_SOFT}; color: {ACCENT_INK}; }}
         QLabel#brand {{ font-size: 19pt; font-weight: 700; }}
         QLabel#pageTitle {{ font-size: 18pt; font-weight: 700; }}
         QLabel#muted {{ color: {MUTED}; }}
@@ -66,7 +114,16 @@ def apply(app: QApplication) -> None:
         QFrame[card="true"] {{
             background: {SURFACE}; border: 1px solid {LINE_SOFT}; border-radius: 10px;
         }}
+        QWidget#dashboardArea {{ background: {BG}; }}
+        QFrame#dashboardCard {{
+            background: {SURFACE}; border: 1px solid {LINE_SOFT}; border-radius: 10px;
+        }}
+        QFrame#dashboardCard > QWidget {{ background: transparent; }}
         QFrame[dropTarget="true"] {{ border: 2px solid {ACCENT}; }}
+        QWidget[density="dense"] QPushButton {{ padding: 4px 10px; min-height: 15px; }}
+        QWidget[density="dense"] QTreeWidget::item,
+        QWidget[density="dense"] QListWidget::item {{ padding: 3px; }}
+        QWidget[density="dense"] QFrame#sidebar QPushButton {{ padding: 5px 10px; }}
         QScrollBar:vertical {{ width: 10px; background: {BG}; margin: 0; }}
         QScrollBar::handle:vertical {{ background: {LINE}; border-radius: 4px; min-height: 24px; }}
         QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
@@ -84,14 +141,6 @@ def set_density(root: QWidget, density: str) -> None:
     global CURRENT_DENSITY
     CURRENT_DENSITY = density if density in DENSITY_OPTIONS else "comfortable"
     root.setProperty("density", CURRENT_DENSITY)
-    if CURRENT_DENSITY == "dense":
-        root.setStyleSheet("""
-            QPushButton { padding: 4px 10px; min-height: 15px; }
-            QTreeWidget::item, QListWidget::item { padding: 3px; }
-            QFrame#sidebar QPushButton { padding: 5px 10px; }
-        """)
-    else:
-        root.setStyleSheet("")
     root.style().unpolish(root)
     root.style().polish(root)
 
