@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cerealbox"
+version = "0.1.0"
+description = "A local, encrypted personal workspace"
+requires-python = ">=3.11"
+dependencies = ["cryptography>=41"]
+
+[project.scripts]
+cerealbox = "CerealBox.app:main"
+
+[tool.setuptools]
+package-dir = {CerealBox = ".", "CerealBox.core" = "core", "CerealBox.ui" = "ui", "CerealBox.ui.qt_designer" = "ui/qt_designer", "CerealBox.modules" = "modules", "CerealBox.modules.calendar" = "modules/calendar", "CerealBox.modules.contacts" = "modules/contacts", "CerealBox.modules.dashboard" = "modules/dashboard", "CerealBox.modules.email" = "modules/email", "CerealBox.modules.goals" = "modules/goals", "CerealBox.modules.habits" = "modules/habits", "CerealBox.modules.health" = "modules/health", "CerealBox.modules.home" = "modules/home", "CerealBox.modules.money" = "modules/money", "CerealBox.modules.notes" = "modules/notes", "CerealBox.modules.passwords" = "modules/passwords", "CerealBox.modules.search" = "modules/search", "CerealBox.modules.tasks" = "modules/tasks", "CerealBox.modules.taxes" = "modules/taxes"}
+packages = ["CerealBox", "CerealBox.core", "CerealBox.ui", "CerealBox.ui.qt_designer", "CerealBox.modules", "CerealBox.modules.calendar", "CerealBox.modules.contacts", "CerealBox.modules.dashboard", "CerealBox.modules.email", "CerealBox.modules.goals", "CerealBox.modules.habits", "CerealBox.modules.health", "CerealBox.modules.home", "CerealBox.modules.money", "CerealBox.modules.notes", "CerealBox.modules.passwords", "CerealBox.modules.search", "CerealBox.modules.tasks", "CerealBox.modules.taxes"]

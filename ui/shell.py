@@ -109,7 +109,7 @@ class Shell(tk.Tk):
         # Apply density from settings if available
         try:
             density = api.setting("ui.density", "comfortable")
-            from lifeos.ui.theme import set_density
+            from .theme import set_density
             set_density(self, density)
         except Exception:
             log.debug("Could not apply density from settings")
@@ -145,7 +145,7 @@ class Shell(tk.Tk):
 
     def _set_density(self, density: str) -> None:
         try:
-            from lifeos.ui.theme import set_density
+            from .theme import set_density
             set_density(self, density)
             if hasattr(self, "api") and self.api is not None:
                 self.api.set_setting("ui.density", density)

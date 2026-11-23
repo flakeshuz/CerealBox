@@ -1,4 +1,4 @@
-"""Entry point: python main.py [--vault PATH]"""
+"""CerealBox application entry point."""
 from __future__ import annotations
 
 import argparse
@@ -8,7 +8,14 @@ from pathlib import Path
 
 def default_vault_path() -> Path:
     base = os.environ.get("CEREALBOX_HOME")
-    return (Path(base) if base else Path.home() / ".cerealbox") / "vault.cerealbox"
+    if base:
+        vault_dir = Path(base)
+    elif os.name == "nt":
+        appdata = os.environ.get("APPDATA")
+        vault_dir = Path(appdata) / "CerealBox" if appdata else Path.home() / "AppData" / "Roaming" / "CerealBox"
+    else:
+        vault_dir = Path.home() / ".cerealbox"
+    return vault_dir / "vault.cerealbox"
 
 
 def main(argv: list[str] | None = None) -> None:
