@@ -212,6 +212,10 @@ class QtFrontendTests(unittest.TestCase):
                 )
                 self.assertIn("contacts", shell.api.modules)
                 self.assertNotIn("Contacts", shell._titles)
+                self.assertFalse(any(
+                    not module.show_in_navigation and module.title in shell._titles
+                    for module in shell.api.modules.values()
+                ))
                 self.assertTrue(all(isinstance(shell.nb.widget(i), QWidget) for i in range(shell.nb.count())))
                 self.assertEqual(set(shell._pages), {"Dashboard"})
                 self.assertEqual(shell._page_title.text(), "Today")
