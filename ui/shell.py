@@ -50,6 +50,8 @@ class Shell(QMainWindow):
         self._jobs: dict[str, QTimer] = {}
         self._pages: dict[str, QWidget] = {}
         self._titles: list[str] = []
+        self._modules = []
+        self._loaded_pages: set[int] = set()
 
     def closeEvent(self, event) -> None:
         for timer in self._jobs.values():
@@ -80,8 +82,10 @@ class Shell(QMainWindow):
         """Build the workspace around an already-open API."""
         self.api = api
         modules = list(api.modules.values())
+        self._modules = modules
         self._titles = [module.title for module in modules]
         self._pages = {}
+        self._loaded_pages = set()
 
         central = QWidget(self)
         root = QHBoxLayout(central)
@@ -113,13 +117,10 @@ class Shell(QMainWindow):
 
         self.nb = Pager(workspace)
         for module in modules:
-            view = module.create_view(self.nb)
-            if view is None:
-                continue
-            if not isinstance(view, QWidget):
-                raise TypeError(f"{module.name}.create_view() must return a PyQt6 QWidget.")
-            self.nb.add(view, text=module.title)
-            self._pages[module.title] = view
+            page = QWidget(self.nb)
+            page.setLayout(QVBoxLayout())
+            page.layout().setContentsMargins(0, 0, 0, 0)
+            self.nb.add(page, text=module.title)
         if self.nb.count() == 0:
             raise RuntimeError("No workspace screens are available.")
         work_layout.addWidget(self.nb, 1)
@@ -128,7 +129,8 @@ class Shell(QMainWindow):
 
         self._build_menu()
         self.statusBar().showMessage("Local and encrypted")
-        self.nb.currentChanged.connect(self._sync_sidebar)
+        self.nb.currentChanged.connect(self._page_changed)
+        self._ensure_page(0)
         self.sidebar.set_active(0)
         self._sync_sidebar()
 
@@ -295,7 +297,27 @@ class Shell(QMainWindow):
 
     def _select_index(self, index: int) -> None:
         if 0 <= index < self.nb.count():
+            self._ensure_page(index)
             self.nb.setCurrentIndex(index)
+
+    def _ensure_page(self, index: int) -> None:
+        if index in self._loaded_pages or not 0 <= index < len(self._modules):
+            return
+        module = self._modules[index]
+        host = self.nb.widget(index)
+        view = module.create_view(host)
+        if view is None:
+            self._loaded_pages.add(index)
+            return
+        if not isinstance(view, QWidget):
+            raise TypeError(f"{module.name}.create_view() must return a PyQt6 QWidget.")
+        host.layout().addWidget(view)
+        self._pages[module.title] = view
+        self._loaded_pages.add(index)
+
+    def _page_changed(self, index: int) -> None:
+        self._ensure_page(index)
+        self._sync_sidebar()
 
     def _sync_sidebar(self, *_args) -> None:
         index = self.nb.currentIndex()
@@ -314,11 +336,13 @@ class Shell(QMainWindow):
         if not target:
             return
         title, method = target
-        view = self._pages.get(title)
-        if view is None:
+        if title not in self._titles:
             return
         index = self._titles.index(title)
         self._select_index(index)
+        view = self._pages.get(title)
+        if view is None:
+            return
         if method:
             callback = getattr(view, method, None)
             if callable(callback):

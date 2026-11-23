@@ -97,9 +97,11 @@ class QtFrontendTests(unittest.TestCase):
                     self.assertTrue(shell.start())
                 self.assertEqual(shell.nb.count(), len(shell.api.modules))
                 self.assertTrue(all(isinstance(shell.nb.widget(i), QWidget) for i in range(shell.nb.count())))
+                self.assertEqual(set(shell._pages), {"Dashboard"})
                 self.assertEqual(shell._page_title.text(), "Today")
                 shell._select_index(1)
                 self.assertEqual(shell._page_title.text(), "Calendar")
+                self.assertIn("Calendar", shell._pages)
                 self.assertEqual(shell.sidebar._active, 1)
                 shell.sidebar.query.setText("tasks")
                 visible_spaces = [
