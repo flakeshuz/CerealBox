@@ -42,6 +42,21 @@ class QtFrontendTests(unittest.TestCase):
                     if not row.isHidden()
                 ]
                 self.assertEqual(visible_spaces, ["Tasks"])
+                shell.sidebar.query.clear()
+                self.assertFalse(shell.sidebar.more.isChecked())
+                self.assertTrue(shell.sidebar._more_body.isHidden())
+                shell.sidebar.more.setChecked(True)
+                self.assertFalse(shell.sidebar._more_body.isHidden())
+                shell.sidebar.query.setText("notes")
+                visible_spaces = [
+                    shell._titles[index]
+                    for index, row in shell.sidebar._rows
+                    if not row.isHidden()
+                ]
+                self.assertEqual(visible_spaces, ["Notes"])
+                self.assertTrue(shell.sidebar.more.isChecked())
+                shell.sidebar.query.clear()
+                self.assertTrue(shell.sidebar._more_body.isHidden())
             finally:
                 shell.close()
                 self.app.processEvents()
