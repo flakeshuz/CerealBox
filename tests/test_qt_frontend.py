@@ -5,14 +5,14 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1].parent))
 
 from PyQt6.QtWidgets import QApplication, QWidget
 
-from CerealBox.core import LifeAPI, Vault
-from CerealBox.modules import default_modules
+from CerealBox.core import Vault
 from CerealBox.ui.shell import Shell
 from CerealBox.ui.unlock import PasswordDialog
 
@@ -25,20 +25,23 @@ class QtFrontendTests(unittest.TestCase):
     def test_registered_module_screens_are_qt_widgets(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             vault = Vault.create(Path(directory) / "test.cerealbox", "test-password")
-            api = LifeAPI(vault)
-            modules = default_modules()
-            for module in modules:
-                api.register(module)
-
             shell = Shell(Path(directory) / "test.cerealbox")
             try:
-                shell.attach(api)
-                self.assertEqual(shell.nb.count(), len(modules))
+                with patch("CerealBox.ui.shell.unlock_vault", return_value=vault):
+                    self.assertTrue(shell.start())
+                self.assertEqual(shell.nb.count(), len(shell.api.modules))
                 self.assertTrue(all(isinstance(shell.nb.widget(i), QWidget) for i in range(shell.nb.count())))
                 self.assertEqual(shell._page_title.text(), "Today")
                 shell._select_index(1)
                 self.assertEqual(shell._page_title.text(), "Calendar")
                 self.assertEqual(shell.sidebar._active, 1)
+                shell.sidebar.query.setText("tasks")
+                visible_spaces = [
+                    shell._titles[index]
+                    for index, row in shell.sidebar._rows
+                    if not row.isHidden()
+                ]
+                self.assertEqual(visible_spaces, ["Tasks"])
             finally:
                 shell.close()
                 self.app.processEvents()
