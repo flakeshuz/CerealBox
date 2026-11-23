@@ -30,6 +30,7 @@ from ..modules import default_modules
 from . import theme as T
 from .pager import Pager
 from .sidebar import Sidebar
+from .theme_dialog import ThemeDialog
 from .update_workers import UpdateApplyWorker, UpdateCheckWorker
 from .unlock import ask_new_password, unlock_vault
 
@@ -88,6 +89,18 @@ class Shell(QMainWindow):
     def attach(self, api: LifeAPI) -> None:
         """Build the workspace around an already-open API."""
         self.api = api
+        qt_app = QApplication.instance()
+        if qt_app is not None:
+            try:
+                T.apply(qt_app, api.setting("ui.theme"))
+            except ValueError as exc:
+                log.warning("Saved theme settings are invalid: %s", exc)
+                T.apply(qt_app)
+                QMessageBox.warning(
+                    self,
+                    "Theme reset",
+                    f"The saved theme could not be loaded. Warm light will be used for this session.\n\n{exc}",
+                )
         modules = list(api.modules.values())
         self._modules = modules
         self._titles = [module.title for module in modules]
@@ -200,6 +213,8 @@ class Shell(QMainWindow):
         self._action(view_menu, "Find a workspace", self._focus_navigation, "Ctrl+K")
 
         appearance = self.menuBar().addMenu("&Appearance")
+        self._action(appearance, "Customize theme…", self._customize_theme)
+        appearance.addSeparator()
         self._action(appearance, "Comfortable spacing", lambda: self._set_density("comfortable"))
         self._action(appearance, "Compact spacing", lambda: self._set_density("dense"))
 
@@ -221,6 +236,41 @@ class Shell(QMainWindow):
         if self.api is not None:
             self.api.set_setting("ui.density", density)
         self.toast(f"Spacing: {density}")
+
+    def _customize_theme(self) -> None:
+        if self.api is None:
+            return
+        qt_app = QApplication.instance()
+        if qt_app is None:
+            raise RuntimeError("The Qt application is not available.")
+        previous = T.current_theme_config()
+        dialog = ThemeDialog(qt_app, previous, self._refresh_theme_views, self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self._save_theme(dialog.config, previous)
+
+    def _save_theme(self, config: dict[str, str], previous: dict[str, str]) -> None:
+        if self.api is None:
+            return
+        try:
+            self.api.set_setting("ui.theme", config)
+        except Exception as exc:
+            log.exception("Saving the theme failed")
+            qt_app = QApplication.instance()
+            if qt_app is not None:
+                T.apply(qt_app, previous)
+            self._refresh_theme_views()
+            QMessageBox.critical(self, "Theme not saved", str(exc))
+
+    def _refresh_theme_views(self) -> None:
+        for title, view in self._pages.items():
+            try:
+                refresh = getattr(view, "theme_changed", None)
+                if callable(refresh):
+                    refresh()
+                view.update()
+            except Exception:
+                log.exception("Refreshing %s after theme change failed", title)
+                self.toast(f"Could not refresh {title} after theme change.")
 
     def _check_for_updates(self) -> None:
         if self._update_worker is not None and self._update_worker.isRunning():

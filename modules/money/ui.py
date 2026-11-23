@@ -5,7 +5,7 @@ from datetime import date
 from pathlib import Path
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QKeySequence, QShortcut
+from PyQt6.QtGui import QColor, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QMenu,
     QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton, QRadioButton,
@@ -17,6 +17,7 @@ from ...core.rrule import FREQ_BY_LABEL as FREQ
 from ...core.rrule import LABEL_BY_FREQ as CHOICE_OF_FREQ
 from ...core.rrule import REPEAT_CHOICES, REPEAT_NONE, build_rrule, parse_rrule
 from ...core.rrule import REPEAT_CUSTOM as CUSTOM
+from ...ui import theme as T
 from . import csvimport
 from .models import ACCOUNT_KINDS, INCOME, TRANSFER, Account, Bill, Category, Transaction, fmt_money, parse_amount
 
@@ -208,13 +209,16 @@ class MoneyView(QWidget):
             self.txn_table.item(r, 0).setData(Qt.ItemDataRole.UserRole, t.id)
             if t.amount_cents > 0:
                 for c in range(self.txn_table.columnCount()):
-                    self.txn_table.item(r, c).setForeground(Qt.GlobalColor.darkGreen)
+                    self.txn_table.item(r, c).setForeground(QColor(T.SUCCESS))
         if not rows:
             self.empty.setText("Add an account to start. Manage → Accounts." if not self.mod.accounts()
                                else "No transactions this month. Press New transaction, or import a bank CSV.")
             self.empty.show()
         else:
             self.empty.hide()
+
+    def theme_changed(self) -> None:
+        self.refresh()
 
     def new_txn(self):
         if not self.mod.accounts():

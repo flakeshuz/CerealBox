@@ -20,10 +20,6 @@ from .models import Occurrence
 from .subscriptions import Subscription, normalize_url
 
 HOUR_H, GUTTER, CHIP_H = 52, 58, 18
-INK, MUTED, FAINT, LINE, SURFACE, DIM, ACCENT, TODAY_BG, NOW = (
-    T.INK, T.MUTED, T.FAINT, T.LINE, T.SURFACE, T.DIM,
-    T.ACCENT, T.TODAY_BG, T.NOW,
-)
 
 
 def _color(value: str) -> QColor:
@@ -40,7 +36,7 @@ def _tint(value: str, amount: float) -> QColor:
 def _on_color(value: str) -> QColor:
     c = _color(value)
     white = QColor("#ffffff")
-    dark = _color(INK)
+    dark = _color(T.INK)
 
     def contrast(foreground: QColor, background: QColor) -> float:
         def luminance(color: QColor) -> float:
@@ -68,7 +64,7 @@ class _CalendarCanvas(QWidget):
     def paintEvent(self, _event) -> None:
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        p.fillRect(self.rect(), _color(SURFACE))
+        p.fillRect(self.rect(), _color(T.SURFACE))
         if self.head:
             self.view._draw_header(p, self.width(), self.height())
         elif self.view.mode == "month":
@@ -279,6 +275,9 @@ class CalendarView(QWidget):
             QTimer.singleShot(0, lambda: self.scroll.verticalScrollBar().setValue(
                 round(self._scroll_frac * self.scroll.verticalScrollBar().maximum())))
 
+    def theme_changed(self) -> None:
+        self.redraw()
+
     @staticmethod
     def _fit(p: QPainter, text: str, max_width: float) -> str:
         text = text.replace("\n", " ")
@@ -320,8 +319,9 @@ class CalendarView(QWidget):
             flush()
         return result
 
-    def _text(self, p, x, y, text, color=INK, size=9, bold=False,
+    def _text(self, p, x, y, text, color=None, size=9, bold=False,
               align=Qt.AlignmentFlag.AlignLeft, width=1000):
+        color = T.INK if color is None else color
         font = QFont()
         font.setPointSize(size)
         font.setBold(bold)
@@ -336,24 +336,24 @@ class CalendarView(QWidget):
         today, by_day = date.today(), self._bucket(self._occurrences)
         self._hits = []
         for i, d in enumerate(grid[0]):
-            self._text(p, i * cw + 10, hdr / 2 + 5, f"{d:%a}", MUTED)
+            self._text(p, i * cw + 10, hdr / 2 + 5, f"{d:%a}", T.MUTED)
         for r, week in enumerate(grid):
             for i, d in enumerate(week):
                 x0, y0, x1, y1 = i * cw, hdr + r * ch, (i + 1) * cw, hdr + (r + 1) * ch
                 in_month = d.month == self.cursor.month
-                p.fillRect(QRectF(x0, y0, cw, ch), _color(TODAY_BG if d == today else (SURFACE if in_month else DIM)))
-                p.setPen(_color(LINE))
+                p.fillRect(QRectF(x0, y0, cw, ch), _color(T.TODAY_BG if d == today else (T.SURFACE if in_month else T.DIM)))
+                p.setPen(_color(T.LINE))
                 p.drawRect(QRectF(x0, y0, cw, ch))
                 self._hits.append((QRectF(x0, y0, cw, ch), "day", d))
                 if d == today:
-                    p.setBrush(_color(ACCENT))
+                    p.setBrush(_color(T.ACCENT))
                     p.setPen(Qt.PenStyle.NoPen)
                     p.drawEllipse(QRectF(x0 + 6, y0 + 5, 22, 22))
-                    self._text(p, x0 + 6, y0 + 17, str(d.day), "#ffffff", 10, True,
+                    self._text(p, x0 + 6, y0 + 17, str(d.day), T.ACCENT_BUTTON_TEXT, 10, True,
                                Qt.AlignmentFlag.AlignHCenter, 22)
                 else:
                     label = f"{d:%b} {d.day}" if d.day == 1 else str(d.day)
-                    self._text(p, x0 + 10, y0 + 18, label, INK if in_month else FAINT, 10, True)
+                    self._text(p, x0 + 10, y0 + 18, label, T.INK if in_month else T.FAINT, 10, True)
                 items = by_day.get(d, [])
                 cap = max(0, int((ch - 34) // (CHIP_H + 2)))
                 shown = items if len(items) <= cap else items[:max(cap - 1, 0)]
@@ -362,7 +362,7 @@ class CalendarView(QWidget):
                     self._month_chip(p, occ, x0 + 4, y, x1 - 4)
                     y += CHIP_H + 2
                 if len(items) > len(shown) and y + CHIP_H <= y1 + 2:
-                    self._text(p, x0 + 10, y + CHIP_H / 2 + 5, f"+{len(items)-len(shown)}", MUTED)
+                    self._text(p, x0 + 10, y + CHIP_H / 2 + 5, f"+{len(items)-len(shown)}", T.MUTED)
                     self._hits.append((QRectF(x0 + 4, y, x1 - x0 - 8, CHIP_H), "more", d))
 
     def _month_chip(self, p: QPainter, occ: Occurrence, x0: float, y: float, x1: float) -> None:
@@ -374,7 +374,7 @@ class CalendarView(QWidget):
             p.setBrush(_color(col))
             p.setPen(Qt.PenStyle.NoPen)
             p.drawEllipse(QRectF(x0 + 4, y + 6, 6, 6))
-            text, color = f"{D.fmt_time_short(occ.start)} {occ.title}", _color(INK)
+            text, color = f"{D.fmt_time_short(occ.start)} {occ.title}", _color(T.INK)
         self._text(p, x0 + 15 if not (occ.all_day or len(occ.days()) > 1) else x0 + 6,
                    y + CHIP_H / 2 + 4, self._fit(p, text, x1 - x0 - 18), color.name(), 9)
         self._hits.append((QRectF(x0, y, x1 - x0, CHIP_H), "event", occ))
@@ -403,14 +403,14 @@ class CalendarView(QWidget):
         for i,d in enumerate(days):
             x = GUTTER + i*colw
             if d == today:
-                p.fillRect(QRectF(x,0,colw,height),_color(TODAY_BG))
-            p.setPen(_color(LINE)); p.drawLine(QPointF(x,0),QPointF(x,height))
-            self._text(p,x+10,17,f"{d:%a}",ACCENT if d==today else MUTED)
-            self._text(p,x+10,39,str(d.day),ACCENT if d==today else INK,15,True)
+                p.fillRect(QRectF(x,0,colw,height),_color(T.TODAY_BG))
+            p.setPen(_color(T.LINE)); p.drawLine(QPointF(x,0),QPointF(x,height))
+            self._text(p,x+10,17,f"{d:%a}",T.ACCENT_INK if d==today else T.MUTED)
+            self._text(p,x+10,39,str(d.day),T.ACCENT_INK if d==today else T.INK,15,True)
             self._head_hits.append((QRectF(x,0,colw,height),"allday",d))
-        p.setPen(_color(LINE)); p.drawLine(0,height-1,w,height-1)
+        p.setPen(_color(T.LINE)); p.drawLine(0,height-1,w,height-1)
         if shown:
-            self._text(p,0,50+CHIP_H/2+5,"all day",MUTED,8,False,Qt.AlignmentFlag.AlignRight,GUTTER-8)
+            self._text(p,0,50+CHIP_H/2+5,"all day",T.MUTED,8,False,Qt.AlignmentFlag.AlignRight,GUTTER-8)
         for occ,c0,c1,row in placed:
             if row >= shown: continue
             x0,x1=GUTTER+c0*colw+3,GUTTER+(c1+1)*colw-3
@@ -419,7 +419,7 @@ class CalendarView(QWidget):
             self._text(p,x0+6,y+CHIP_H/2+4,self._fit(p,occ.title,x1-x0-12),_on_color(color).name())
             self._head_hits.append((QRectF(x0,y,x1-x0,CHIP_H),"event",occ))
         extra=sum(1 for _,_,_,r in placed if r>=shown)
-        if extra:         self._text(p,0,height-5,f"+{extra}",MUTED,9,False,Qt.AlignmentFlag.AlignRight,GUTTER-8)
+        if extra:         self._text(p,0,height-5,f"+{extra}",T.MUTED,9,False,Qt.AlignmentFlag.AlignRight,GUTTER-8)
 
     def _draw_timed(self, p: QPainter, w: int) -> None:
         first,last=self._range()
@@ -427,15 +427,15 @@ class CalendarView(QWidget):
         n=len(days); colw=(w-GUTTER)/n; self._colw,self._col_days=colw,days
         today=date.today(); total=24*HOUR_H
         for i,d in enumerate(days):
-            if d==today: p.fillRect(QRectF(GUTTER+i*colw,0,colw,total),_color(TODAY_BG))
+            if d==today: p.fillRect(QRectF(GUTTER+i*colw,0,colw,total),_color(T.TODAY_BG))
         for hr in range(24):
             y=hr*HOUR_H
-            p.setPen(_color(LINE)); p.drawLine(QPointF(GUTTER,y),QPointF(w,y))
+            p.setPen(_color(T.LINE)); p.drawLine(QPointF(GUTTER,y),QPointF(w,y))
             p.setPen(_color("#eceef0")); p.drawLine(QPointF(GUTTER,y+HOUR_H/2),QPointF(w,y+HOUR_H/2))
-            if hr: self._text(p,0,y+4,D.fmt_hour(hr),MUTED,8,False,Qt.AlignmentFlag.AlignRight,GUTTER-8)
+            if hr: self._text(p,0,y+4,D.fmt_hour(hr),T.MUTED,8,False,Qt.AlignmentFlag.AlignRight,GUTTER-8)
         for i in range(n+1):
             x=GUTTER+i*colw
-            p.setPen(_color(LINE)); p.drawLine(QPointF(x,0),QPointF(x,total))
+            p.setPen(_color(T.LINE)); p.drawLine(QPointF(x,0),QPointF(x,total))
         self._hits=[]
         for i,d in enumerate(days):
             x0=GUTTER+i*colw
@@ -464,8 +464,8 @@ class CalendarView(QWidget):
         if today in days:
             x=GUTTER+days.index(today)*colw
             y=(datetime.now()-D.day_start(today)).total_seconds()/3600*HOUR_H
-            p.setPen(QPen(_color(NOW),2)); p.drawLine(QPointF(x,y),QPointF(x+colw,y))
-            p.setBrush(_color(NOW)); p.setPen(Qt.PenStyle.NoPen); p.drawEllipse(QPointF(x,y),4,4)
+            p.setPen(QPen(_color(T.NOW),2)); p.drawLine(QPointF(x,y),QPointF(x+colw,y))
+            p.setBrush(_color(T.NOW)); p.setPen(Qt.PenStyle.NoPen); p.drawEllipse(QPointF(x,y),4,4)
 
     def _find(self, canvas, pos):
         y = pos.y() + (self.scroll.verticalScrollBar().value() if canvas is self.body and self.mode != "month" else 0)
@@ -514,7 +514,7 @@ class CalendarView(QWidget):
         if not target:
             return
         occ, new_start = target
-        pen = QPen(_color(ACCENT), 2, Qt.PenStyle.DashLine)
+        pen = QPen(_color(T.ACCENT), 2, Qt.PenStyle.DashLine)
         painter.setPen(pen)
         painter.setBrush(Qt.BrushStyle.NoBrush)
         if self.mode == "month":

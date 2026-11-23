@@ -24,6 +24,7 @@ from CerealBox.modules.dashboard.ui import DASHBOARD_CARD_MIME, DashboardCardFra
 from CerealBox.modules.docsvault_ui import document_bytes, decoded_text
 from CerealBox.ui.shell import Shell
 from CerealBox.ui import theme as T
+from CerealBox.ui.theme_dialog import ThemeDialog
 from CerealBox.ui.unlock import PasswordDialog
 
 
@@ -149,6 +150,54 @@ class QtFrontendTests(unittest.TestCase):
             self.assertEqual(frame.grab().toImage().pixelColor(100, 50).name(), T.SURFACE.lower())
         finally:
             frame.close()
+
+    def test_theme_presets_and_custom_colors_enforce_contrast(self) -> None:
+        for preset in ("warm", "dark", "high_contrast"):
+            with self.subTest(preset=preset):
+                self.assertEqual(T.theme_errors(T.theme_config(preset)), [])
+        low_contrast = {
+            "preset": "custom",
+            "background": "#FFFFFF",
+            "surface": "#FFFFFF",
+            "text": "#FFFFFF",
+            "accent": "#FFFFFF",
+        }
+        self.assertEqual(len(T.theme_errors(low_contrast)), 2)
+        original = T.theme_config()
+        dialog = ThemeDialog(self.app, original, lambda: None)
+        dialog.config = low_contrast
+        dialog._preview()
+        self.assertFalse(dialog.apply_button.isEnabled())
+        dialog.reject()
+
+    def test_theme_preview_cancel_restores_previous_theme(self) -> None:
+        original = T.theme_config()
+        T.apply(self.app, original)
+        previews = []
+        dialog = ThemeDialog(self.app, original, lambda: previews.append(T.BG))
+        dialog.preset.setCurrentIndex(dialog.preset.findData("dark"))
+        self.assertEqual(T.BG, T.theme_config("dark")["background"])
+        self.assertTrue(previews)
+        dialog.reject()
+        self.assertEqual(T.current_theme_config(), original)
+        self.assertEqual(T.BG, original["background"])
+
+    def test_theme_apply_persists_config_in_vault(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            vault = Vault.create(Path(directory) / "test.cerealbox", "test-password")
+            shell = Shell(Path(directory) / "test.cerealbox")
+            original = T.theme_config()
+            config = T.theme_config("dark")
+            try:
+                with patch("CerealBox.ui.shell.unlock_vault", return_value=vault):
+                    self.assertTrue(shell.start())
+                T.apply(self.app, config)
+                shell._save_theme(config, original)
+                self.assertEqual(shell.api.setting("ui.theme"), config)
+            finally:
+                shell.close()
+                T.apply(self.app, original)
+                self.app.processEvents()
 
     def test_registered_module_screens_are_qt_widgets(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

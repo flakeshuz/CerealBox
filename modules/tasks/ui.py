@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import QItemSelectionModel, Qt, QTimer
 from PyQt6.QtGui import QColor, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QButtonGroup, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout,
@@ -175,6 +175,17 @@ class TasksView(QWidget):
         self._update_buttons()
         self.empty.setText(self._empty_text() if not tasks else "")
         self.empty.setVisible(not tasks)
+
+    def theme_changed(self) -> None:
+        selected = set(self._selected())
+        self.refresh()
+        self.table.clearSelection()
+        for row, task_id in enumerate(self._ids):
+            if task_id in selected:
+                self.table.selectionModel().select(
+                    self.table.model().index(row, 0),
+                    QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows,
+                )
 
     def _empty_text(self):
         if self.search.text().strip():

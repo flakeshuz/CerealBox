@@ -152,7 +152,7 @@ class Card:
         if muted:
             label.setStyleSheet(f"color: {T.MUTED};")
         if danger:
-            label.setStyleSheet("color: #c62828;")
+            label.setStyleSheet(f"color: {T.NOW};")
         label.setWordWrap(True)
         self.body.layout().addWidget(label)
 
@@ -326,7 +326,7 @@ class BudgetCard(Card):
             name = QLabel(r["name"])
             value = QLabel(f"{money(r['spent'])} of {money(r['budget'])}")
             if over:
-                value.setStyleSheet("color: #c62828")
+                value.setStyleSheet(f"color: {T.NOW}")
             head.addWidget(name)
             head.addStretch()
             head.addWidget(value)
@@ -452,6 +452,9 @@ class DashboardView(QWidget):
                 c.refresh()
             except Exception:
                 log.exception("Dashboard card %s failed", c.key)
+
+    def theme_changed(self) -> None:
+        self.refresh_cards()
 
     def rebuild(self) -> None:
         while self.grid.count():
