@@ -4,24 +4,26 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk
 
+from ...ui.components import configure_listbox, page_header
+
 
 class HealthView(ttk.Frame):
     def __init__(self, parent, mod):
         super().__init__(parent)
         self.mod = mod
-        header = ttk.Frame(self)
-        header.pack(fill="x")
-        ttk.Label(header, text="Health", style="Title.TLabel").pack(side="left", anchor="w")
-        ttk.Button(header, text="Add appointment", command=self.add_appointment).pack(side="right", padx=6)
+        header, actions = page_header(self, "Health")
+        ttk.Button(actions, text="Add appointment", style="Accent.TButton", command=self.add_appointment).pack(side="left")
         self.appt_frame = ttk.Frame(self)
         self.appt_frame.pack(fill="both", expand=True, pady=4)
         ttk.Label(self.appt_frame, text="Appointments", style="Muted.TLabel").pack(anchor="w")
         self.appt_list = tk.Listbox(self.appt_frame)
+        configure_listbox(self.appt_list)
         self.appt_list.pack(fill="both", expand=True, pady=4)
         self.med_frame = ttk.Frame(self)
         self.med_frame.pack(fill="both", expand=True, pady=4)
         ttk.Label(self.med_frame, text="Medications", style="Muted.TLabel").pack(anchor="w")
         self.med_list = tk.Listbox(self.med_frame)
+        configure_listbox(self.med_list)
         self.med_list.pack(fill="both", expand=True, pady=4)
         self.refresh()
 

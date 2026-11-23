@@ -253,7 +253,7 @@ def events_to_ics(events: list[Event], category_names: dict[str, str] | None = N
     """Times are written as floating local time (no timezone), which every app reads as 'local'."""
     category_names = category_names or {}
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//LifeOS//Calendar//EN", "CALSCALE:GREGORIAN"]
+    lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//CerealBox//Calendar//EN", "CALSCALE:GREGORIAN"]
     for ev in events:
         fmt, key = ("%Y%m%d", ";VALUE=DATE") if ev.all_day else ("%Y%m%dT%H%M%S", "")
         lines += ["BEGIN:VEVENT", f"UID:{ev.uid or ev.id}", f"DTSTAMP:{stamp}",

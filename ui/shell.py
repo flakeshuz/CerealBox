@@ -17,7 +17,7 @@ from .pager import Pager
 from .sidebar import Sidebar
 from .unlock import ask_new_password, unlock_vault
 
-log = logging.getLogger("lifeos")
+log = logging.getLogger("cerealbox")
 POLL_MS = 15_000
 SYNC_CHECK_MS = 5_000
 CHECKPOINT_EVERY = timedelta(minutes=10)
@@ -29,7 +29,7 @@ class Shell(tk.Tk):
         super().__init__()
         self.withdraw()
         T.apply(self)
-        self.title("LifeOS")
+        self.title("CerealBox")
         self.vault_path = Path(vault_path)
         self.api: LifeAPI | None = None
         self._rem_win: tk.Toplevel | None = None
@@ -73,7 +73,7 @@ class Shell(tk.Tk):
         self._bind_keys()
         self._status = ttk.Label(self, text="", style="Status.TLabel", anchor="w")
         workspace = ttk.Frame(self)
-        header = ttk.Frame(workspace, padding=(24, 16))
+        header = ttk.Frame(workspace, style="Page.TFrame", padding=(24, 16))
         header.pack(fill="x")
         self._page_title = ttk.Label(header, text="Today", style="Title.TLabel")
         self._page_title.pack(side="left")
@@ -136,7 +136,7 @@ class Shell(tk.Tk):
         helpm = tk.Menu(bar, tearoff=False)
         helpm.add_command(label="Keyboard shortcuts", accelerator="F1", command=self.show_shortcuts)
         bar.add_cascade(label="Help", menu=helpm)
-        # Apple-inspired appearance options
+        # CerealBox appearance options
         appearance = tk.Menu(bar, tearoff=False)
         appearance.add_command(label="Comfortable spacing", command=lambda: self._set_density("comfortable"))
         appearance.add_command(label="Compact spacing", command=lambda: self._set_density("dense"))
@@ -155,7 +155,7 @@ class Shell(tk.Tk):
 
 
     def _backup(self) -> None:
-        dest = filedialog.asksaveasfilename(parent=self, title="Save encrypted backup", initialfile="vault-backup.lifeos")
+        dest = filedialog.asksaveasfilename(parent=self, title="Save encrypted backup", initialfile="vault-backup.cerealbox")
         if dest:
             self.api.vault.backup_to(dest)
             messagebox.showinfo("Backup saved", "Saved an encrypted copy. It needs your password to open.", parent=self)
@@ -167,13 +167,13 @@ class Shell(tk.Tk):
                 parent=self):
             return
         dest = filedialog.asksaveasfilename(parent=self, title="Export all data", defaultextension=".json",
-                                            initialfile="lifeos-export.json", filetypes=[("JSON", "*.json")])
+                                            initialfile="cerealbox-export.json", filetypes=[("JSON", "*.json")])
         if dest:
             self.api.export_json(dest)
             messagebox.showinfo("Export finished", f"Saved to {dest}", parent=self)
 
     def _import_json(self) -> None:
-        src = filedialog.askopenfilename(parent=self, title="Import LifeOS data", filetypes=[("JSON", "*.json")])
+        src = filedialog.askopenfilename(parent=self, title="Import CerealBox data", filetypes=[("JSON", "*.json")])
         if not src:
             return
         choice = messagebox.askyesnocancel(
@@ -233,7 +233,7 @@ class Shell(tk.Tk):
         if not target:
             return
         title, method = target
-        if os.environ.get("LIFEOS_UI_VERBOSE"):
+        if os.environ.get("CEREALBOX_UI_VERBOSE"):
             print(f"[UI] request action={action} -> tab='{title}', method='{method}'")
         view = self._select_tab(title)
         if method and view is not None and hasattr(view, method):

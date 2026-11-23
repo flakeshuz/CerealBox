@@ -1,4 +1,4 @@
-"""Design system for LifeOS.
+"""Design system for CerealBox.
 
 The look is deliberately quiet: one warm neutral page, white sheets for content, one accent colour
 used only for things you can act on, and type that does the hierarchy work instead of borders and boxes.
@@ -14,22 +14,22 @@ from tkinter import font as tkfont
 from tkinter import ttk
 
 # ---- colour -----------------------------------------------------------------------------
-BG = "#F7F5F1"  # Apple-inspired page background
-SURFACE = "#FFFFFF"  # content sheets
-DIM = "#F4F2EE"  # Apple dim
-TODAY_BG = "#EEF3FE"
-INK = "#1D1D1F"  # primary text
-MUTED = "#5C5D60"  # secondary text (Apple subdued)
-FAINT = "#97A0A6"  # tertiary text and disabled states (slightly warmer)
-LINE = "#E6E8EC"  # hairlines (soft)
-LINE_SOFT = "#EFEFF1"
-CONTROL = "#F4F5F7"  # secondary buttons and segmented controls
-CONTROL_HOVER = "#E1E1E5"
-ACCENT = "#0A2D6A"  # Apple accent (primary action blue, darker for accessibility)
-ACCENT_SOFT = "#E7F0FF"
-ACCENT_INK = "#094A9B"  # Apple accent as text on soft background
-NOW = "#D0021B"  # overdue, errors, destructive actions
-SUCCESS = "#1B7D52"
+BG = "#FFF7E6"  # warm milk-and-cereal page background
+SURFACE = "#FFFCF5"  # content sheets
+DIM = "#F7EFD9"  # oat dim
+TODAY_BG = "#FFF0B8"
+INK = "#33261C"  # primary text
+MUTED = "#716151"  # secondary text
+FAINT = "#A9957D"  # tertiary text and disabled states
+LINE = "#E8DDBF"  # soft cereal-box hairlines
+LINE_SOFT = "#F1E7C9"
+CONTROL = "#F7EFD9"  # secondary buttons and segmented controls
+CONTROL_HOVER = "#ECDEB7"
+ACCENT = "#D94B2B"  # red cereal-box accent
+ACCENT_SOFT = "#FFE3CF"
+ACCENT_INK = "#A52F18"  # accent text on soft background
+NOW = "#B42318"  # overdue, errors, destructive actions
+SUCCESS = "#5C7D3A"
 
 FAMILY = "TkDefaultFont"
 SIZE = 10  # body text; screens are built around this
@@ -61,6 +61,7 @@ def apply(root: tk.Misc) -> None:
     # base
     s.configure(".", background=BG, foreground=INK, font=(FAMILY, SIZE), focuscolor=BG, bordercolor=LINE)
     s.configure("TFrame", background=BG)
+    s.configure("Page.TFrame", background=BG)
     s.configure("Surface.TFrame", background=SURFACE)
     s.configure("TLabel", background=BG, foreground=INK)
     s.configure("Display.TLabel", font=(FAMILY, 28, "bold"))
@@ -180,7 +181,7 @@ def center(win: tk.Toplevel | tk.Tk, parent: tk.Misc | None = None) -> None:
     win.geometry(f"+{max(x, 0)}+{max(y, 0)}")
 
 
-# Density management for Apple-inspired comfortable vs compact UI
+# Density management for comfortable vs compact CerealBox UI
 CURRENT_DENSITY = "comfortable"
 DENSITY_OPTIONS = ("comfortable", "dense")
 

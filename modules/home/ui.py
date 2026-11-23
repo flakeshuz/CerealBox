@@ -4,18 +4,19 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk
 
+from ...ui.components import configure_listbox, page_header
+
 
 class HomeView(ttk.Frame):
     def __init__(self, parent, mod):
         super().__init__(parent)
         self.mod = mod
-        header = ttk.Frame(self)
-        header.pack(fill="x")
-        ttk.Label(header, text="Home", style="Title.TLabel").pack(side="left", anchor="w")
-        ttk.Button(header, text="Add maintenance", command=self.add).pack(side="right")
+        header, actions = page_header(self, "Home")
+        ttk.Button(actions, text="Add maintenance", style="Accent.TButton", command=self.add).pack(side="left")
         self.maint_frame = ttk.Frame(self)
         self.maint_frame.pack(fill="both", expand=True, pady=4)
         self.listbox = tk.Listbox(self.maint_frame)
+        configure_listbox(self.listbox)
         self.listbox.pack(fill="both", expand=True, pady=4)
         self.refresh()
 

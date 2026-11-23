@@ -14,7 +14,7 @@ from ...core import dates as D
 from ...ui import theme as T
 from . import CATALOG, move, set_shown, set_span
 
-log = logging.getLogger("lifeos")
+log = logging.getLogger("cerealbox")
 WIDGETS: dict[str, type] = {}
 
 

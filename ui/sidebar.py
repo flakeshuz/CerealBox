@@ -16,9 +16,9 @@ class Sidebar(tk.Frame):
         self._active = -1
         self._rows = []
         self._titles = titles
-        tk.Label(self, text="LifeOS", bg=T.SURFACE, fg=T.INK,
+        tk.Label(self, text="CerealBox", bg=T.SURFACE, fg=T.INK,
                  font=(T.FAMILY, 21, "bold"), anchor="w").pack(fill="x", padx=22, pady=(24, 0))
-        tk.Label(self, text="A little more in order.", bg=T.SURFACE, fg=T.MUTED,
+        tk.Label(self, text="Start your day, sorted.", bg=T.SURFACE, fg=T.MUTED,
                  anchor="w").pack(fill="x", padx=22, pady=(4, 20))
         self.query = tk.StringVar()
         entry = tk.Entry(self, textvariable=self.query, relief="flat", bg=T.CONTROL,
@@ -55,7 +55,7 @@ class Sidebar(tk.Frame):
                 rows.append((i, row))
             self._sections.append((label, rows))
         self.query.trace_add("write", self._filter)
-        tk.Label(self, text="LOCAL & ENCRYPTED\nYour life stays yours.", justify="left", anchor="w",
+        tk.Label(self, text="LOCAL & FRESH\nYour life stays yours.", justify="left", anchor="w",
                  bg=T.SURFACE, fg=T.MUTED, font=(T.FAMILY, 9)).pack(fill="x", padx=22, pady=18)
 
     def _filter(self, *_):

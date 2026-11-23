@@ -63,7 +63,7 @@ class Event:
         eid = new_id("evt")
         if end is None:
             end = start + (timedelta(days=1) if kw.get("all_day") else timedelta(hours=1))
-        kw.setdefault("uid", f"{eid}@lifeos.local")
+        kw.setdefault("uid", f"{eid}@cerealbox.local")
         return cls(id=eid, title=title, start=start, end=end, **kw)
 
     @property

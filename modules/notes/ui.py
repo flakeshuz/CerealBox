@@ -4,17 +4,18 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk
 
+from ...ui.components import configure_listbox, page_header
+
 
 class NotesView(ttk.Frame):
     def __init__(self, parent, mod):
         super().__init__(parent)
         self.mod = mod
-        ttk.Label(self, text="Notes", style="Title.TLabel").pack(anchor="w")
+        header, actions = page_header(self, "Notes")
+        ttk.Button(actions, text="Add Note", style="Accent.TButton", command=self.add).pack(side="left")
         self.listbox = tk.Listbox(self)
-        self.listbox.pack(fill="both", expand=True, pady=4)
-        frm = ttk.Frame(self)
-        frm.pack(anchor="e")
-        ttk.Button(frm, text="Add Note", command=self.add).pack(side="left")
+        configure_listbox(self.listbox)
+        self.listbox.pack(fill="both", expand=True, padx=24, pady=(4, 24))
         self.refresh()
 
     def refresh(self):

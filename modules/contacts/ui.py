@@ -4,23 +4,25 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk
 
+from ...ui.components import configure_listbox, page_header
+
 class ContactsView(ttk.Frame):
     def __init__(self, parent, mod):
         super().__init__(parent)
         self.mod = mod
-        header = ttk.Frame(self)
-        header.pack(fill="x")
-        ttk.Label(header, text="Contacts", style="Title.TLabel").pack(side="left", anchor="w")
-        ttk.Button(header, text="Birthdays", command=self.toggle_birthdays).pack(side="right", padx=(0,6))
-        ttk.Button(header, text="Add Contact", command=self.add).pack(side="right")
+        header, actions = page_header(self, "Contacts")
+        ttk.Button(actions, text="Birthdays", command=self.toggle_birthdays).pack(side="left", padx=(0, 6))
+        ttk.Button(actions, text="Add Contact", style="Accent.TButton", command=self.add).pack(side="left")
         self.listbox = tk.Listbox(self)
-        self.listbox.pack(fill="both", expand=True, pady=4)
+        configure_listbox(self.listbox)
+        self.listbox.pack(fill="both", expand=True, padx=24, pady=(4, 24))
         self.birthdays_visible = False
         self.birthdays_frame = ttk.Frame(self)
         self.birthdays_frame.pack(fill="x", padx=4, pady=4)
         self.birthdays_frame.pack_forget()
         ttk.Label(self.birthdays_frame, text="Birthdays this year:", style="Muted.TLabel").pack(anchor="w")
         self.birthdays_list = tk.Listbox(self.birthdays_frame)
+        configure_listbox(self.birthdays_list)
         self.birthdays_list.pack(fill="both", expand=True)
         self.refresh()
 

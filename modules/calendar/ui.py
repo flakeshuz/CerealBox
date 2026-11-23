@@ -648,7 +648,7 @@ class CalendarView(ttk.Frame):
 
     def export_ics(self) -> None:
         path = filedialog.asksaveasfilename(parent=self, title="Export calendar", defaultextension=".ics",
-                                            initialfile="lifeos-calendar.ics", filetypes=[("iCalendar", "*.ics")])
+                                            initialfile="cerealbox-calendar.ics", filetypes=[("iCalendar", "*.ics")])
         if path:
             Path(path).write_bytes(self.cal.export_ics().encode("utf-8"))
             messagebox.showinfo("Export finished", f"Saved to {path}", parent=self)
@@ -665,7 +665,7 @@ class SubscriptionDialog(tk.Toplevel):
         frm = ttk.Frame(self, padding=20)
         frm.pack()
         ttk.Label(frm, text="Add a calendar link", style="Title.TLabel").grid(row=0, column=0, columnspan=2, sticky="w")
-        ttk.Label(frm, text="Paste the .ics or webcal link from Google, Apple or Outlook. LifeOS checks it on the "
+        ttk.Label(frm, text="Paste the .ics or webcal link from Google, Apple or Outlook. CerealBox checks it on the "
                             "interval you choose. Events from a link are read-only here.",
                   style="Muted.TLabel", wraplength=460, justify="left").grid(row=1, column=0, columnspan=2,
                                                                              sticky="w", pady=(4, 12))

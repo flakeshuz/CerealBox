@@ -4,18 +4,19 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk
 
+from ...ui.components import configure_listbox, page_header
+
 
 class PasswordsView(ttk.Frame):
     def __init__(self, parent, mod):
         super().__init__(parent)
         self.mod = mod
-        ttk.Label(self, text="Passwords", style="Title.TLabel").pack(anchor="w")
+        header, actions = page_header(self, "Passwords")
+        ttk.Button(actions, text="Store", style="Accent.TButton", command=self.store).pack(side="left")
+        ttk.Button(actions, text="Refresh", command=self.refresh).pack(side="left", padx=(6, 0))
         self.listbox = tk.Listbox(self)
-        self.listbox.pack(fill="both", expand=True, pady=4)
-        frm = ttk.Frame(self)
-        frm.pack(anchor="e")
-        ttk.Button(frm, text="Store", command=self.store).pack(side="left")
-        ttk.Button(frm, text="Refresh", command=self.refresh).pack(side="left")
+        configure_listbox(self.listbox)
+        self.listbox.pack(fill="both", expand=True, padx=24, pady=(4, 24))
         self.refresh()
 
     def refresh(self):

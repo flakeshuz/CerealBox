@@ -4,23 +4,25 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk
 
+from ...ui.components import configure_listbox, page_header
+
 
 class HabitsView(ttk.Frame):
     def __init__(self, parent, mod):
         super().__init__(parent)
         self.mod = mod
-        header = ttk.Frame(self)
-        header.pack(fill="x")
-        ttk.Label(header, text="Habits", style="Title.TLabel").pack(side="left", anchor="w")
-        self.checkin_btn = ttk.Button(header, text="Check-in", command=self.check_in_selected)
-        self.checkin_btn.pack(side="right", padx=6)
-        ttk.Button(header, text="Add Habit", command=self.add).pack(side="right")
+        header, actions = page_header(self, "Habits")
+        self.checkin_btn = ttk.Button(actions, text="Check-in", command=self.check_in_selected)
+        self.checkin_btn.pack(side="left", padx=(0, 6))
+        ttk.Button(actions, text="Add Habit", style="Accent.TButton", command=self.add).pack(side="left")
         self.listbox = tk.Listbox(self)
-        self.listbox.pack(fill="both", expand=True, pady=4)
+        configure_listbox(self.listbox)
+        self.listbox.pack(fill="both", expand=True, padx=24, pady=(4, 8))
         self.checkins_frame = ttk.Frame(self)
         self.checkins_frame.pack(fill="both", expand=True, pady=(6,0))
         ttk.Label(self.checkins_frame, text="Recent check-ins:", style="Muted.TLabel").pack(anchor="w")
         self.checkins_list = tk.Listbox(self.checkins_frame)
+        configure_listbox(self.checkins_list)
         self.checkins_list.pack(fill="both", expand=True, pady=4)
         self.refresh()
         self.listbox.bind("<<ListboxSelect>>", lambda e: self._refresh_checkins())

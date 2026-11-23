@@ -58,7 +58,7 @@ def normalize_url(url: str) -> str:
 
 
 def fetch_url(url: str, timeout: float = 20.0) -> str:
-    req = urllib.request.Request(normalize_url(url), headers={"User-Agent": "LifeOS/0.1 (calendar link)"})
+    req = urllib.request.Request(normalize_url(url), headers={"User-Agent": "CerealBox/0.1 (calendar link)"})
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         data = resp.read(MAX_BYTES + 1)
     if len(data) > MAX_BYTES:

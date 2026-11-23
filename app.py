@@ -7,12 +7,12 @@ from pathlib import Path
 
 
 def default_vault_path() -> Path:
-    base = os.environ.get("LIFEOS_HOME")
-    return (Path(base) if base else Path.home() / ".lifeos") / "vault.lifeos"
+    base = os.environ.get("CEREALBOX_HOME")
+    return (Path(base) if base else Path.home() / ".cerealbox") / "vault.cerealbox"
 
 
 def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(prog="lifeos", description="Local, encrypted life management.")
+    parser = argparse.ArgumentParser(prog="cerealbox", description="Fresh, local, encrypted life management.")
     parser.add_argument("--vault", type=Path, default=None, help=f"vault file (default: {default_vault_path()})")
     args = parser.parse_args(argv)
 

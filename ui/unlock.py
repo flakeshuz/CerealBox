@@ -18,7 +18,7 @@ class PasswordDialog(tk.Toplevel):
         super().__init__(parent)
         self.password: str | None = None
         self.mode = mode
-        titles = {"unlock": "Unlock LifeOS", "create": "Create your vault", "change": "Change password"}
+        titles = {"unlock": "Unlock CerealBox", "create": "Create your CerealBox", "change": "Change password"}
         self.title(titles[mode])
         self.resizable(False, False)
         self.configure(bg=T.BG)
@@ -28,7 +28,7 @@ class PasswordDialog(tk.Toplevel):
         ttk.Label(body, text=titles[mode], style="Title.TLabel").grid(row=0, column=0, sticky="w")
         blurb = {
             "unlock": f"Enter your password to open {path.name if path else 'your vault'}.",
-            "create": "Choose a password. It encrypts everything LifeOS stores.\nThere is no recovery: if you forget it, "
+            "create": "Choose a password. It seals everything CerealBox stores.\nThere is no recovery: if you forget it, "
                       "your data can't be read.",
             "change": "Choose a new password for this vault.",
         }[mode]

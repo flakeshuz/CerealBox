@@ -4,15 +4,18 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk
 
+from ...ui.components import configure_listbox, page_header
+
 
 class GoalsView(ttk.Frame):
     def __init__(self, parent, mod):
         super().__init__(parent)
         self.mod = mod
-        ttk.Label(self, text="Goals", style="Title.TLabel").pack(anchor="w")
+        header, actions = page_header(self, "Goals")
+        ttk.Button(actions, text="Add Goal", style="Accent.TButton", command=self.add).pack(side="left")
         self.listbox = tk.Listbox(self)
-        self.listbox.pack(fill="both", expand=True, pady=4)
-        ttk.Button(self, text="Add Goal", command=self.add).pack(side="right")
+        configure_listbox(self.listbox)
+        self.listbox.pack(fill="both", expand=True, padx=24, pady=(4, 24))
         self.refresh()
 
     def refresh(self):
