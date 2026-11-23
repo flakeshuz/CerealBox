@@ -4,25 +4,25 @@ from __future__ import annotations
 from PyQt6.QtGui import QColor, QFont, QPalette
 from PyQt6.QtWidgets import QApplication, QDialog, QWidget
 
-BG = "#FFF7E6"
-SURFACE = "#FFFCF5"
-DIM = "#F7EFD9"
-TODAY_BG = "#FFF0B8"
-INK = "#33261C"
-MUTED = "#716151"
-FAINT = "#76624C"
-LINE = "#E8DDBF"
-LINE_SOFT = "#F1E7C9"
-CONTROL = "#F7EFD9"
-CONTROL_HOVER = "#ECDEB7"
-ACCENT = "#B63D24"
-ACCENT_SOFT = "#FFE3CF"
-ACCENT_INK = "#A52F18"
-ACCENT_HOVER = "#A9321C"
+BG = "#F4F6FA"
+SURFACE = "#FFFFFF"
+DIM = "#EEF1F6"
+TODAY_BG = "#EEF0FF"
+INK = "#182033"
+MUTED = "#667085"
+FAINT = "#7A8496"
+LINE = "#DCE1EA"
+LINE_SOFT = "#E8ECF3"
+CONTROL = "#F4F6FA"
+CONTROL_HOVER = "#EAEDF4"
+ACCENT = "#5B5BD6"
+ACCENT_SOFT = "#ECECFF"
+ACCENT_INK = "#4242A8"
+ACCENT_HOVER = "#4D4DBF"
 ACCENT_BUTTON_TEXT = "#FFFFFF"
 NOW = "#B42318"
 SUCCESS = "#5C7D3A"
-FAMILY = "sans-serif"
+FAMILY = "Segoe UI"
 SIZE = 10
 CURRENT_DENSITY = "comfortable"
 DENSITY_OPTIONS = ("comfortable", "dense")
@@ -35,10 +35,10 @@ PRESET_LABELS = {
 }
 _PRESET_COLORS = {
     "warm": {
-        "background": "#FFF7E6",
-        "surface": "#FFFCF5",
-        "text": "#33261C",
-        "accent": "#B63D24",
+        "background": "#F4F6FA",
+        "surface": "#FFFFFF",
+        "text": "#182033",
+        "accent": "#5B5BD6",
     },
     "dark": {
         "background": "#201A17",
@@ -216,57 +216,65 @@ def apply(app: QApplication, config: dict | None = None) -> None:
         palette.setColor(QPalette.ColorGroup.Disabled, role, QColor(FAINT))
     app.setPalette(palette)
     app.setStyleSheet(f"""
-        QWidget {{ color: {INK}; font-family: "{FAMILY}"; font-size: {SIZE}pt; }}
+        QWidget {{ color: {INK}; font-family: "{FAMILY}", "Inter", sans-serif; font-size: {SIZE}pt; }}
         QMainWindow, QDialog {{ background: {BG}; }}
-        QFrame#sidebar {{ background: {SURFACE}; border-right: 1px solid {LINE}; }}
+        QFrame#sidebar {{ background: {SURFACE}; border-right: 1px solid {LINE_SOFT}; }}
         QScrollArea {{ background: {BG}; border: 0; }}
         QScrollArea::viewport {{ background: {BG}; }}
         QFrame#sidebar QScrollArea, QFrame#sidebar QScrollArea::viewport {{
             background: {SURFACE};
         }}
         QWidget#sidebarBody {{ background: {SURFACE}; }}
-        QMenuBar {{ background: {SURFACE}; color: {INK}; }}
-        QMenuBar::item {{ background: transparent; padding: 5px 8px; }}
+        QMenuBar {{ background: {SURFACE}; color: {MUTED}; border-bottom: 1px solid {LINE_SOFT}; }}
+        QMenuBar::item {{ background: transparent; padding: 6px 10px; }}
         QMenuBar::item:selected {{ background: {ACCENT_SOFT}; color: {ACCENT_INK}; }}
         QMenu {{ background: {SURFACE}; color: {INK}; border: 1px solid {LINE}; }}
         QMenu::item {{ padding: 5px 24px 5px 8px; }}
         QMenu::item:selected {{ background: {ACCENT_SOFT}; color: {ACCENT_INK}; }}
-        QLabel#brand {{ font-size: 19pt; font-weight: 700; }}
-        QLabel#pageTitle {{ font-size: 18pt; font-weight: 700; }}
+        QFrame#workspaceHeader {{
+            background: {SURFACE};
+            border: 1px solid {LINE_SOFT};
+            border-radius: 12px;
+        }}
+        QLabel#brand {{ font-size: 20pt; font-weight: 700; letter-spacing: -1px; }}
+        QLabel#pageTitle {{ font-size: 21pt; font-weight: 700; letter-spacing: -0.3px; }}
         QLabel#muted {{ color: {MUTED}; }}
         QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox, QDoubleSpinBox, QDateEdit, QTimeEdit,
         QDateTimeEdit, QComboBox, QListWidget, QTreeWidget, QTableWidget {{
-            background: {SURFACE}; border: 1px solid {LINE}; border-radius: 6px; padding: 6px;
+            background: {SURFACE}; border: 1px solid {LINE}; border-radius: 8px; padding: 7px 9px;
             selection-background-color: {ACCENT_SOFT}; selection-color: {ACCENT_INK};
         }}
         QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus, QSpinBox:focus, QComboBox:focus {{
-            border: 2px solid {ACCENT};
+            border: 1px solid {ACCENT};
         }}
         QPushButton {{
-            background: {CONTROL}; border: 1px solid {CONTROL}; border-radius: 6px;
-            padding: 7px 13px; min-height: 18px;
+            background: {SURFACE}; border: 1px solid {LINE}; border-radius: 8px;
+            padding: 8px 14px; min-height: 20px;
         }}
         QPushButton:hover {{ background: {CONTROL_HOVER}; }}
         QPushButton:pressed {{ background: {LINE}; }}
         QPushButton:disabled {{ color: {FAINT}; }}
         QPushButton[primary="true"] {{ color: {ACCENT_BUTTON_TEXT}; background: {ACCENT}; border-color: {ACCENT}; font-weight: 600; }}
         QPushButton[primary="true"]:hover {{ background: {ACCENT_HOVER}; }}
-        QPushButton[danger="true"] {{ color: {NOW}; }}
+        QPushButton[danger="true"] {{ color: {NOW}; border-color: {LINE}; }}
         QPushButton#navItem {{
-            text-align: left; background: transparent; border: 0; padding: 8px 12px;
+            text-align: left; background: transparent; border: 0; border-radius: 8px;
+            padding: 9px 12px; min-height: 22px;
         }}
-        QPushButton#navItem:hover, QPushButton#navItem[active="true"] {{
-            color: {ACCENT_INK}; background: {ACCENT_SOFT};
+        QPushButton#navItem:hover {{ color: {ACCENT_INK}; background: {CONTROL}; }}
+        QPushButton#navItem[active="true"] {{
+            color: {ACCENT_INK}; background: {ACCENT_SOFT}; font-weight: 600;
         }}
-        QTreeWidget::item {{ padding: 6px; }}
-        QHeaderView::section {{ background: {SURFACE}; color: {MUTED}; border: 0; padding: 8px; }}
-        QStatusBar {{ color: {MUTED}; }}
+        QTreeWidget::item, QListWidget::item, QTableWidget::item {{ padding: 7px; }}
+        QHeaderView::section {{ background: {SURFACE}; color: {MUTED}; border: 0;
+            border-bottom: 1px solid {LINE_SOFT}; padding: 9px; font-weight: 600; }}
+        QStatusBar {{ color: {MUTED}; background: {SURFACE}; border-top: 1px solid {LINE_SOFT}; }}
         QFrame[card="true"] {{
-            background: {SURFACE}; border: 1px solid {LINE_SOFT}; border-radius: 10px;
+            background: {SURFACE}; border: 1px solid {LINE_SOFT}; border-radius: 12px;
         }}
         QWidget#dashboardArea {{ background: {BG}; }}
         QFrame#dashboardCard {{
-            background: {SURFACE}; border: 1px solid {LINE_SOFT}; border-radius: 10px;
+            background: {SURFACE}; border: 1px solid {LINE_SOFT}; border-radius: 12px;
         }}
         QFrame#dashboardCard > QWidget {{ background: transparent; }}
         QFrame[dropTarget="true"] {{ border: 2px solid {ACCENT}; }}

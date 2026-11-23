@@ -28,14 +28,14 @@ class Sidebar(QFrame):
     def __init__(self, parent: QWidget, titles: list[str], on_select: Callable[[int], None]):
         super().__init__(parent)
         self.setObjectName("sidebar")
-        self.setMinimumWidth(210)
-        self.setMaximumWidth(280)
+        self.setMinimumWidth(232)
+        self.setMaximumWidth(264)
         self._titles = titles
         self._rows: list[tuple[int, QPushButton]] = []
         self._sections: list[tuple[QLabel, list[tuple[int, QPushButton]]]] = []
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(16, 20, 14, 14)
-        outer.setSpacing(6)
+        outer.setContentsMargins(18, 22, 18, 16)
+        outer.setSpacing(8)
 
         brand = QLabel("CerealBox")
         brand.setObjectName("brand")
@@ -47,6 +47,7 @@ class Sidebar(QFrame):
         self.query = QLineEdit()
         self.query.setPlaceholderText("Find a space…")
         self.query.setClearButtonEnabled(True)
+        self.query.setMinimumHeight(38)
         self.query.setAccessibleName("Filter workspace navigation")
         outer.addWidget(self.query)
 
@@ -64,7 +65,7 @@ class Sidebar(QFrame):
         used: set[int] = set()
         core_heading = QLabel("CORE")
         core_heading.setObjectName("muted")
-        core_heading.setStyleSheet("font-size: 8pt; font-weight: 700; padding: 8px 8px 2px;")
+        core_heading.setStyleSheet("font-size: 8pt; font-weight: 700; letter-spacing: 1px; padding: 10px 12px 4px;")
         self._body_layout.addWidget(core_heading)
         core_rows: list[tuple[int, QPushButton]] = []
         for name in CORE_NAMES:
@@ -83,7 +84,8 @@ class Sidebar(QFrame):
             self._rows.append((index, button))
         self._sections.append((core_heading, core_rows))
 
-        self.more = QPushButton("More  \u25be")
+        self.more = QPushButton("More")
+        self.more.setProperty("navGroup", True)
         self.more.setObjectName("navItem")
         self.more.setCursor(Qt.CursorShape.PointingHandCursor)
         self.more.setCheckable(True)
@@ -105,7 +107,7 @@ class Sidebar(QFrame):
                 continue
             label = QLabel(heading)
             label.setObjectName("muted")
-            label.setStyleSheet("font-size: 8pt; font-weight: 700; padding: 8px 8px 2px;")
+            label.setStyleSheet("font-size: 8pt; font-weight: 700; letter-spacing: 1px; padding: 10px 12px 4px;")
             more_layout.addWidget(label)
             rows: list[tuple[int, QPushButton]] = []
             for index in indices:
@@ -126,8 +128,9 @@ class Sidebar(QFrame):
         more_body.setVisible(False)
         self._body_layout.addStretch(1)
 
-        footer = QLabel("LOCAL & ENCRYPTED\nYour life stays yours.")
+        footer = QLabel("LOCAL & ENCRYPTED")
         footer.setObjectName("muted")
+        footer.setStyleSheet("font-size: 8pt; font-weight: 700; letter-spacing: 1px; padding: 10px 12px 2px;")
         outer.addWidget(footer)
         self.query.textChanged.connect(self._filter)
         self._active = -1
@@ -138,7 +141,7 @@ class Sidebar(QFrame):
             self.more.setChecked(False)
             self._more_expanded = False
             self._more_body.setVisible(False)
-            self.more.setText("More  \u25be")
+            self.more.setText("More")
             for heading, rows in self._sections:
                 heading.setVisible(heading.text() == "CORE")
                 for _index, button in rows:
@@ -159,18 +162,18 @@ class Sidebar(QFrame):
         if secondary_visible:
             self.more.setChecked(True)
             self._more_body.setVisible(True)
-            self.more.setText("More  \u25b4")
+            self.more.setText("Less")
         else:
             self.more.setChecked(False)
             self._more_body.setVisible(False)
-            self.more.setText("More  \u25be")
+            self.more.setText("More")
 
     def _toggle_more(self, expanded: bool) -> None:
         if self.query.text().strip():
             return
         self._more_expanded = expanded
         self._more_body.setVisible(expanded)
-        self.more.setText("More  \u25b4" if expanded else "More  \u25be")
+        self.more.setText("Less" if expanded else "More")
 
     def set_active(self, index: int) -> None:
         self._active = index

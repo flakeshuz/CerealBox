@@ -116,12 +116,13 @@ class Shell(QMainWindow):
 
         workspace = QWidget(central)
         work_layout = QVBoxLayout(workspace)
-        work_layout.setContentsMargins(22, 14, 22, 0)
-        work_layout.setSpacing(0)
+        work_layout.setContentsMargins(24, 16, 24, 0)
+        work_layout.setSpacing(12)
 
         header = QFrame(workspace)
+        header.setObjectName("workspaceHeader")
         header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(2, 0, 2, 12)
+        header_layout.setContentsMargins(16, 10, 16, 10)
         self._page_title = QLabel("Today")
         self._page_title.setObjectName("pageTitle")
         header_layout.addWidget(self._page_title)

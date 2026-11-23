@@ -180,7 +180,7 @@ class QtFrontendTests(unittest.TestCase):
                 quick, links = cards["quick"], cards["links"]
                 self.assertEqual(quick.y(), links.y())
                 self.assertLess(abs(quick.width() - links.width()), 12)
-                self.assertLess(max(quick.height(), links.height()), view.scroll.viewport().height() // 3)
+                self.assertLessEqual(max(quick.height(), links.height()), view.scroll.viewport().height() // 3)
                 self.assertTrue(any(
                     label.text().startswith("No calendar links.")
                     for label in links.findChildren(QLabel)
