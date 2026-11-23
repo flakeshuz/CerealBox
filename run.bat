@@ -1,0 +1,22 @@
+@echo off
+setlocal
+cd /d "%~dp0"
+
+where py >nul 2>nul
+if errorlevel 1 (
+    set "PYTHON=python"
+) else (
+    set "PYTHON=py -3"
+)
+
+%PYTHON% --version
+if errorlevel 1 (
+    echo Python 3.11 or newer is required but was not found.
+    exit /b 1
+)
+
+%PYTHON% -m pip install --user .
+if errorlevel 1 exit /b %errorlevel%
+
+%PYTHON% main.py %*
+exit /b %errorlevel%
