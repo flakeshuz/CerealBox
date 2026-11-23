@@ -17,5 +17,8 @@ if ! "$python" -c 'import sys; raise SystemExit(sys.version_info < (3, 11))'; th
     exit 1
 fi
 
-"$python" -m pip install --user .
+if ! "$python" -c 'import cryptography, PyQt6'; then
+    echo "Installing CerealBox dependencies..."
+    "$python" -m pip install --user --disable-pip-version-check .
+fi
 exec "$python" main.py "$@"

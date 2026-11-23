@@ -15,8 +15,12 @@ if errorlevel 1 (
     exit /b 1
 )
 
-%PYTHON% -m pip install --user .
-if errorlevel 1 exit /b %errorlevel%
+%PYTHON% -c "import cryptography, PyQt6" >nul 2>nul
+if errorlevel 1 (
+    echo Installing CerealBox dependencies...
+    %PYTHON% -m pip install --user --disable-pip-version-check .
+    if errorlevel 1 exit /b %errorlevel%
+)
 
 %PYTHON% main.py %*
 exit /b %errorlevel%
