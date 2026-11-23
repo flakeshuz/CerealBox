@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import tkinter as tk
+from tkinter import ttk
+
 from . import theme as T
 
 WIDTH = 224
@@ -26,13 +28,30 @@ class Sidebar(tk.Frame):
         entry.pack(fill="x", padx=16, ipady=8)
         tk.Label(self, text="Filter spaces", bg=T.SURFACE, fg=T.MUTED,
                  anchor="w").pack(fill="x", padx=22, pady=(4, 12))
-        canvas = tk.Canvas(self, bg=T.SURFACE, highlightthickness=0, width=WIDTH)
-        canvas.pack(fill="both", expand=True)
+        navigation = tk.Frame(self, bg=T.SURFACE)
+        navigation.pack(fill="both", expand=True)
+        canvas = tk.Canvas(navigation, bg=T.SURFACE, highlightthickness=0, width=WIDTH)
+        scrollbar = ttk.Scrollbar(navigation, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
         body = tk.Frame(canvas, bg=T.SURFACE)
         window = canvas.create_window(0, 0, window=body, anchor="nw")
         canvas.bind("<Configure>", lambda e: canvas.itemconfigure(window, width=e.width))
         body.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-        canvas.bind("<MouseWheel>", lambda e: canvas.yview_scroll(-int(e.delta / 120), "units"))
+
+        def scroll_navigation(event):
+            if getattr(event, "num", None) == 4:
+                delta = -1
+            elif getattr(event, "num", None) == 5:
+                delta = 1
+            else:
+                delta = -1 if event.delta > 0 else 1
+            canvas.yview_scroll(delta, "units")
+            return "break"
+
+        for sequence in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+            canvas.bind(sequence, scroll_navigation)
         self._sections = []
         used = set()
         for heading, names in (*GROUPS, ("LIBRARY", tuple(t for t in titles if not any(t in n for _, n in GROUPS)))):

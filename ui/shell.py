@@ -4,6 +4,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import os
+import re
 import tkinter as tk
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -67,9 +68,21 @@ class Shell(tk.Tk):
         """Build the UI around an already-open API (also used by tests)."""
         self.api = api
         geom = api.setting("core.geometry")
-        self.geometry(geom or "1180x780")
-        self.minsize(900, 560)
-        self._build_menu()
+        screen_width, screen_height = self.winfo_screenwidth(), self.winfo_screenheight()
+        max_width, max_height = max(1, screen_width - 32), max(1, screen_height - 80)
+        min_width, min_height = min(900, max_width), min(560, max_height)
+        self.minsize(min_width, min_height)
+        saved = re.fullmatch(r"(\d+)x(\d+)([+-]\d+)([+-]\d+)", geom or "")
+        if saved:
+            width = max(min_width, min(int(saved.group(1)), max_width))
+            height = max(min_height, min(int(saved.group(2)), max_height))
+            x = max(0, min(int(saved.group(3)), screen_width - width))
+            y = max(0, min(int(saved.group(4)), screen_height - height))
+            self.geometry(f"{width}x{height}{x:+d}{y:+d}")
+        else:
+            width, height = min(1180, max_width), min(780, max_height)
+            x, y = max(0, (screen_width - width) // 2), max(0, (screen_height - height) // 2)
+            self.geometry(f"{width}x{height}+{x}+{y}")
         self._bind_keys()
         self._status = ttk.Label(self, text="", style="Status.TLabel", anchor="w")
         workspace = ttk.Frame(self)
@@ -86,6 +99,7 @@ class Shell(tk.Tk):
             view = module.create_view(self.nb)
             if view is not None:
                 self.nb.add(view, text=module.title)
+        self._build_menu()
         titles = [self.nb.tab(t, "text") for t in self.nb.tabs()]
         self.sidebar = Sidebar(self, titles, self._select_index)
         self._status.pack(side="bottom", fill="x")
@@ -103,8 +117,6 @@ class Shell(tk.Tk):
         api.on("ui.request", self._on_request)
         api.on("calendar.synced", self._on_synced)
         self.protocol("WM_DELETE_WINDOW", self.destroy)
-        if not geom:
-            T.center(self)
         self.deiconify()
         # Apply density from settings if available
         try:
@@ -128,8 +140,11 @@ class Shell(tk.Tk):
         file.add_command(label="Quit", command=self.destroy)
         bar.add_cascade(label="File", menu=file)
         view = tk.Menu(bar, tearoff=False)
-        for i, name in enumerate(("Dashboard", "Calendar", "Tasks", "Money")):
-            view.add_command(label=name, accelerator=f"Ctrl+{i + 1}", command=lambda n=i: self._select_index(n))
+        titles = [self.nb.tab(tab, "text") for tab in self.nb.tabs()]
+        for i, name in enumerate(titles):
+            accelerator = f"Ctrl+{i + 1}" if i < 4 else ""
+            view.add_command(label="Today" if name == "Dashboard" else name, accelerator=accelerator,
+                             command=lambda n=i: self._select_index(n))
         view.add_separator()
         view.add_command(label="New item here", accelerator="Ctrl+N", command=self._new_here)
         bar.add_cascade(label="View", menu=view)
