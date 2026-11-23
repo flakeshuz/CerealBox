@@ -10,11 +10,16 @@ from unittest.mock import patch
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1].parent))
 
+from PyQt6.QtCore import QMimeData, QPointF, Qt
+from PyQt6.QtGui import QDropEvent
 from PyQt6.QtWidgets import QApplication, QMessageBox, QWidget
 
 from CerealBox.core import Vault
+from CerealBox.modules.dashboard import reorder
+from CerealBox.modules.dashboard.ui import DASHBOARD_CARD_MIME, DashboardCardFrame
 from CerealBox.modules.docsvault_ui import document_bytes, decoded_text
 from CerealBox.ui.shell import Shell
+from CerealBox.ui import theme as T
 from CerealBox.ui.unlock import PasswordDialog
 
 
@@ -22,6 +27,66 @@ class QtFrontendTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.app = QApplication.instance() or QApplication(["cerealbox-tests"])
+
+    @staticmethod
+    def _contrast_ratio(foreground: str, background: str) -> float:
+        def luminance(color: str) -> float:
+            channels = [int(color[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+            linear = [value / 12.92 if value <= 0.04045 else ((value + 0.055) / 1.055) ** 2.4
+                      for value in channels]
+            return sum(value * weight for value, weight in zip(linear, (0.2126, 0.7152, 0.0722)))
+
+        high, low = sorted((luminance(foreground), luminance(background)), reverse=True)
+        return (high + 0.05) / (low + 0.05)
+
+    def test_dashboard_drag_reordering_updates_saved_layout(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            vault = Vault.create(Path(directory) / "test.cerealbox", "test-password")
+            shell = Shell(Path(directory) / "test.cerealbox")
+            try:
+                with patch("CerealBox.ui.shell.unlock_vault", return_value=vault):
+                    self.assertTrue(shell.start())
+                view = shell._pages["Dashboard"]
+                view.customize_box.setChecked(True)
+                self.assertFalse(view.customize_hint.isHidden())
+                self.assertTrue(any("Drag to reorder" in button.toolTip()
+                                    for button in view.findChildren(QWidget)
+                                    if hasattr(button, "toolTip")))
+
+                target = next(frame for frame in view.findChildren(DashboardCardFrame)
+                              if frame.key == "quick")
+                mime = QMimeData()
+                mime.setData(DASHBOARD_CARD_MIME, b"today")
+                event = QDropEvent(
+                    QPointF(0, 0),
+                    Qt.DropAction.MoveAction,
+                    mime,
+                    Qt.MouseButton.LeftButton,
+                    Qt.KeyboardModifier.NoModifier,
+                )
+                target.dropEvent(event)
+                self.assertTrue(event.isAccepted())
+                shown = [item["key"] for item in view.mod.layout() if item["shown"]]
+                self.assertEqual(shown, ["today", "quick", "tasks"])
+                self.assertEqual([item["key"] for item in reorder(view.mod.layout(), "missing", "quick")
+                                  if item["shown"]], shown)
+                moved_to_end = reorder(view.mod.layout(), "today", "tasks", after=True)
+                self.assertEqual([item["key"] for item in moved_to_end if item["shown"]],
+                                 ["quick", "tasks", "today"])
+            finally:
+                shell.close()
+                self.app.processEvents()
+
+    def test_palette_text_contrast_meets_wcag_aa(self) -> None:
+        for foreground, background in (
+            (T.FAINT, T.BG),
+            (T.FAINT, T.SURFACE),
+            (T.ACCENT, T.BG),
+            (T.ACCENT, T.SURFACE),
+            ("#FFFFFF", T.ACCENT),
+        ):
+            with self.subTest(foreground=foreground, background=background):
+                self.assertGreaterEqual(self._contrast_ratio(foreground, background), 4.5)
 
     def test_registered_module_screens_are_qt_widgets(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

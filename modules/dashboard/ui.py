@@ -4,17 +4,94 @@ from __future__ import annotations
 import logging
 from datetime import date, datetime, timedelta
 
-from PyQt6.QtCore import QTimer, Qt
+from PyQt6.QtCore import QMimeData, QTimer, Qt
+from PyQt6.QtGui import QDrag
 from PyQt6.QtWidgets import (
-    QCheckBox, QGridLayout, QHBoxLayout, QLabel, QMenu, QProgressBar,
+    QApplication, QCheckBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QMenu, QProgressBar,
     QPushButton, QScrollArea, QVBoxLayout, QWidget,
 )
 
 from ...core import dates as D
-from . import CATALOG, move, set_shown, set_span
+from ...ui import theme as T
+from . import CATALOG, move, reorder, set_shown, set_span
 
 log = logging.getLogger("cerealbox")
 WIDGETS: dict[str, type] = {}
+DASHBOARD_CARD_MIME = "application/x-cerealbox-dashboard-card"
+
+
+class CardDragHandle(QPushButton):
+    def __init__(self, key: str, parent: QWidget):
+        super().__init__("↕", parent)
+        self.key = key
+        self.setToolTip("Drag to reorder this card")
+        self.setAccessibleName(f"Drag to reorder {CATALOG[key][0]}")
+        self.setCursor(Qt.CursorShape.SizeAllCursor)
+        self._press_pos = None
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._press_pos = event.position().toPoint()
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if (self._press_pos is not None
+                and event.buttons() & Qt.MouseButton.LeftButton
+                and (event.position().toPoint() - self._press_pos).manhattanLength()
+                >= QApplication.startDragDistance()):
+            mime = QMimeData()
+            mime.setData(DASHBOARD_CARD_MIME, self.key.encode("utf-8"))
+            drag = QDrag(self)
+            drag.setMimeData(mime)
+            drag.exec(Qt.DropAction.MoveAction)
+            self._press_pos = None
+            return
+        super().mouseMoveEvent(event)
+
+
+class DashboardCardFrame(QFrame):
+    def __init__(self, key: str, on_drop, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.key = key
+        self._on_drop = on_drop
+        self.setProperty("card", True)
+        self.setAcceptDrops(True)
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasFormat(DASHBOARD_CARD_MIME):
+            self._set_drop_target(True)
+            event.setDropAction(Qt.DropAction.MoveAction)
+            event.accept()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event):
+        if event.mimeData().hasFormat(DASHBOARD_CARD_MIME):
+            self._set_drop_target(True)
+            event.setDropAction(Qt.DropAction.MoveAction)
+            event.accept()
+        else:
+            event.ignore()
+
+    def dragLeaveEvent(self, event):
+        self._set_drop_target(False)
+        event.accept()
+
+    def dropEvent(self, event):
+        if not event.mimeData().hasFormat(DASHBOARD_CARD_MIME):
+            event.ignore()
+            return
+        key = bytes(event.mimeData().data(DASHBOARD_CARD_MIME)).decode("utf-8")
+        after = event.position().y() >= self.height() / 2
+        self._set_drop_target(False)
+        self._on_drop(key, self.key, after)
+        event.setDropAction(Qt.DropAction.MoveAction)
+        event.accept()
+
+    def _set_drop_target(self, active: bool) -> None:
+        self.setProperty("dropTarget", active)
+        self.style().unpolish(self)
+        self.style().polish(self)
 
 
 def card(cls):
@@ -73,7 +150,7 @@ class Card:
     def _line(self, text: str, muted: bool = False, danger: bool = False) -> None:
         label = QLabel(text)
         if muted:
-            label.setStyleSheet("color: palette(mid);")
+            label.setStyleSheet(f"color: {T.MUTED};")
         if danger:
             label.setStyleSheet("color: #c62828;")
         label.setWordWrap(True)
@@ -319,15 +396,21 @@ class DashboardView(QWidget):
         top.addWidget(self.date_lbl)
         top.addStretch()
         self.customize_box = QCheckBox("Customize")
+        self.customize_box.setAccessibleName("Customize dashboard")
         self.customize_box.toggled.connect(self._toggle_customize)
         top.addWidget(self.customize_box)
         self.add_menu_btn = QPushButton("Add card")
         self.add_menu_btn.setMenu(QMenu(self.add_menu_btn))
         top.addWidget(self.add_menu_btn)
         self.reset_btn = QPushButton("Reset layout")
+        self.reset_btn.setAccessibleName("Reset dashboard layout")
         self.reset_btn.clicked.connect(self._reset)
         top.addWidget(self.reset_btn)
+        self.customize_hint = QLabel("Drag cards to reorder, or use the arrow buttons.")
+        self.customize_hint.setObjectName("muted")
+        self.customize_hint.setWordWrap(True)
         root.addLayout(top)
+        root.addWidget(self.customize_hint)
 
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
@@ -380,13 +463,13 @@ class DashboardView(QWidget):
         self._fill_add_menu(layout)
         self.add_menu_btn.setVisible(self.customize)
         self.reset_btn.setVisible(self.customize)
+        self.customize_hint.setVisible(self.customize)
         row = col = 0
         for pos, item in enumerate(shown):
             key, span = item["key"], item["span"]
             if span == 2 and col == 1:
                 row, col = row + 1, 0
-            card_widget = QWidget()
-            card_widget.setProperty("card", True)
+            card_widget = DashboardCardFrame(key, self._reorder_cards, self.area)
             card_layout = QVBoxLayout(card_widget)
             card_layout.setContentsMargins(22, 18, 22, 18)
             head = QHBoxLayout()
@@ -395,6 +478,7 @@ class DashboardView(QWidget):
             head.addWidget(title)
             head.addStretch()
             if self.customize:
+                head.addWidget(CardDragHandle(key, card_widget))
                 self._controls(head, key, pos, len(shown), span)
             card_layout.addLayout(head)
             body = QWidget()
@@ -419,17 +503,23 @@ class DashboardView(QWidget):
 
     def _controls(self, head: QHBoxLayout, key: str, pos: int, count: int, span: int) -> None:
         up = QPushButton("↑")
+        up.setAccessibleName(f"Move {CATALOG[key][0]} earlier")
+        up.setToolTip(f"Move {CATALOG[key][0]} earlier")
         up.setEnabled(pos != 0)
         up.clicked.connect(lambda: self._change(lambda lay: move(lay, key, -1)))
         head.addWidget(up)
         down = QPushButton("↓")
+        down.setAccessibleName(f"Move {CATALOG[key][0]} later")
+        down.setToolTip(f"Move {CATALOG[key][0]} later")
         down.setEnabled(pos != count - 1)
         down.clicked.connect(lambda: self._change(lambda lay: move(lay, key, 1)))
         head.addWidget(down)
         width = QPushButton("Half width" if span == 2 else "Full width")
+        width.setAccessibleName(f"Change width of {CATALOG[key][0]}")
         width.clicked.connect(lambda: self._change(lambda lay: set_span(lay, key, 1 if span == 2 else 2)))
         head.addWidget(width)
         hide = QPushButton("Hide")
+        hide.setAccessibleName(f"Hide {CATALOG[key][0]}")
         hide.clicked.connect(lambda: self._change(lambda lay: set_shown(lay, key, False)))
         head.addWidget(hide)
 
@@ -448,6 +538,9 @@ class DashboardView(QWidget):
         layout = self.mod.layout()
         self.mod.save_layout(fn(layout))
         self.rebuild()
+
+    def _reorder_cards(self, key: str, target_key: str, after: bool) -> None:
+        self._change(lambda layout: reorder(layout, key, target_key, after=after))
 
     def _reset(self) -> None:
         self.mod.reset_layout()

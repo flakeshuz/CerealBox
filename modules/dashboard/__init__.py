@@ -117,6 +117,20 @@ def move(layout: list[dict[str, object]], key: str, delta: int) -> list[dict[str
     return order + hidden
 
 
+def reorder(
+    layout: list[dict[str, object]], key: str, target_key: str, *, after: bool = False
+) -> list[dict[str, object]]:
+    shown = [dict(item) for item in layout if item.get("shown")]
+    keys = [item["key"] for item in shown]
+    if key not in keys or target_key not in keys or key == target_key:
+        return layout
+    item = shown.pop(keys.index(key))
+    target_index = next(i for i, entry in enumerate(shown) if entry["key"] == target_key)
+    shown.insert(target_index + int(after), item)
+    hidden = [dict(entry) for entry in layout if not entry.get("shown")]
+    return shown + hidden
+
+
 def set_shown(layout: list[dict[str, object]], key: str, shown: bool) -> list[dict[str, object]]:
     new = []
     for d in layout:

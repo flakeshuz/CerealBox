@@ -10,12 +10,12 @@ DIM = "#F7EFD9"
 TODAY_BG = "#FFF0B8"
 INK = "#33261C"
 MUTED = "#716151"
-FAINT = "#A9957D"
+FAINT = "#76624C"
 LINE = "#E8DDBF"
 LINE_SOFT = "#F1E7C9"
 CONTROL = "#F7EFD9"
 CONTROL_HOVER = "#ECDEB7"
-ACCENT = "#D94B2B"
+ACCENT = "#B63D24"
 ACCENT_SOFT = "#FFE3CF"
 ACCENT_INK = "#A52F18"
 NOW = "#B42318"
@@ -52,7 +52,7 @@ def apply(app: QApplication) -> None:
         QPushButton:pressed {{ background: {LINE}; }}
         QPushButton:disabled {{ color: {FAINT}; }}
         QPushButton[primary="true"] {{ color: white; background: {ACCENT}; border-color: {ACCENT}; font-weight: 600; }}
-        QPushButton[primary="true"]:hover {{ background: #BD3D23; }}
+        QPushButton[primary="true"]:hover {{ background: #A9321C; }}
         QPushButton[danger="true"] {{ color: {NOW}; }}
         QPushButton#navItem {{
             text-align: left; background: transparent; border: 0; padding: 8px 12px;
@@ -66,6 +66,7 @@ def apply(app: QApplication) -> None:
         QFrame[card="true"] {{
             background: {SURFACE}; border: 1px solid {LINE_SOFT}; border-radius: 10px;
         }}
+        QFrame[dropTarget="true"] {{ border: 2px solid {ACCENT}; }}
         QScrollBar:vertical {{ width: 10px; background: {BG}; margin: 0; }}
         QScrollBar::handle:vertical {{ background: {LINE}; border-radius: 4px; min-height: 24px; }}
         QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
