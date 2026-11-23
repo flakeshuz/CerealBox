@@ -111,6 +111,7 @@ Treat the dashboard as the daily starting point, not a place to show every possi
 
 - Make today’s events, due tasks, and overdue tasks easy to distinguish and scan.
 - Prioritize actionable items and clear empty states; keep secondary information quieter.
+- Keep dashboard cards content-sized and top-aligned instead of stretching them into blank panels; balance the columns and wrap quick actions into compact controls.
 - Review the dashboard’s Quick actions alongside the shell’s contextual “+ Event” and “+ Task” buttons to avoid competing entry points.
 - Keep customization available but secondary to using the dashboard.
 - Verify the layout at the smallest supported window size and with dense spacing.

@@ -10,9 +10,9 @@ from unittest.mock import patch
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1].parent))
 
-from PyQt6.QtCore import QMimeData, QPointF, Qt
+from PyQt6.QtCore import QEvent, QMimeData, QPointF, Qt
 from PyQt6.QtGui import QDropEvent, QPalette
-from PyQt6.QtWidgets import QApplication, QMessageBox, QWidget
+from PyQt6.QtWidgets import QApplication, QLabel, QMessageBox, QPushButton, QWidget
 
 from CerealBox.core import Vault
 from CerealBox.core import updater
@@ -150,6 +150,49 @@ class QtFrontendTests(unittest.TestCase):
             self.assertEqual(frame.grab().toImage().pixelColor(100, 50).name(), T.SURFACE.lower())
         finally:
             frame.close()
+
+    def test_dashboard_saved_cards_stay_compact_and_balanced(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "test.cerealbox"
+            vault = Vault.create(path, "test-password")
+            shell = Shell(path)
+            try:
+                with patch("CerealBox.ui.shell.unlock_vault", return_value=vault):
+                    self.assertTrue(shell.start())
+                shell.resize(1180, 780)
+                shell.show()
+                self.app.processEvents()
+
+                view = shell._pages["Dashboard"]
+                layout = view.mod.layout()
+                for item in layout:
+                    item["shown"] = item["key"] in ("quick", "links")
+                view.mod.save_layout(layout)
+                view.rebuild()
+                self.app.processEvents()
+                QApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
+                cards = {
+                    view.grid.itemAt(index).widget().key: view.grid.itemAt(index).widget()
+                    for index in range(view.grid.count())
+                }
+                self.assertEqual(set(cards), {"quick", "links"})
+                quick, links = cards["quick"], cards["links"]
+                self.assertEqual(quick.y(), links.y())
+                self.assertLess(abs(quick.width() - links.width()), 12)
+                self.assertLess(max(quick.height(), links.height()), view.scroll.viewport().height() // 3)
+                self.assertTrue(any(
+                    label.text().startswith("No calendar links.")
+                    for label in links.findChildren(QLabel)
+                ))
+                self.assertTrue(all(
+                    button.height() < 48
+                    for button in quick.findChildren(QPushButton)
+                    if button.isVisible()
+                ))
+            finally:
+                shell.close()
+                self.app.processEvents()
 
     def test_theme_presets_and_custom_colors_enforce_contrast(self) -> None:
         for preset in ("warm", "dark", "high_contrast"):

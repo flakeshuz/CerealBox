@@ -8,7 +8,7 @@ from PyQt6.QtCore import QMimeData, QTimer, Qt
 from PyQt6.QtGui import QDrag
 from PyQt6.QtWidgets import (
     QApplication, QCheckBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QMenu, QProgressBar,
-    QPushButton, QScrollArea, QVBoxLayout, QWidget,
+    QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget,
 )
 
 from ...core import dates as D
@@ -172,14 +172,15 @@ class QuickCard(Card):
                ("Transfer", "new_transfer"), ("Import bank CSV", "import_csv"))
 
     def render(self) -> None:
-        row = QHBoxLayout()
-        row.setContentsMargins(0, 0, 0, 0)
-        self.body.layout().addLayout(row)
-        for label, action in self.ACTIONS:
+        grid = QGridLayout()
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(8)
+        grid.setVerticalSpacing(8)
+        self.body.layout().addLayout(grid)
+        for index, (label, action) in enumerate(self.ACTIONS):
             button = QPushButton(label)
             button.clicked.connect(lambda _checked=False, a=action: self.api.emit("ui.request", action=a))
-            row.addWidget(button)
-        row.addStretch()
+            grid.addWidget(button, index // 2, index % 2)
 
 
 @card
@@ -418,6 +419,11 @@ class DashboardView(QWidget):
         self.area.setObjectName("dashboardArea")
         self.grid = QGridLayout(self.area)
         self.grid.setContentsMargins(14, 4, 14, 14)
+        self.grid.setHorizontalSpacing(14)
+        self.grid.setVerticalSpacing(12)
+        self.grid.setColumnStretch(0, 1)
+        self.grid.setColumnStretch(1, 1)
+        self.grid.setAlignment(Qt.AlignmentFlag.AlignTop)
         self.scroll.setWidget(self.area)
         root.addWidget(self.scroll)
 
@@ -475,6 +481,7 @@ class DashboardView(QWidget):
                 row, col = row + 1, 0
             card_widget = DashboardCardFrame(key, self._reorder_cards, self.area)
             card_widget.setObjectName("dashboardCard")
+            card_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
             card_layout = QVBoxLayout(card_widget)
             card_layout.setContentsMargins(22, 18, 22, 18)
             head = QHBoxLayout()
@@ -497,7 +504,7 @@ class DashboardView(QWidget):
                 widget.refresh()
             except Exception:
                 log.exception("Dashboard card %s failed", key)
-            self.grid.addWidget(card_widget, row, col, 1, span)
+            self.grid.addWidget(card_widget, row, col, 1, span, Qt.AlignmentFlag.AlignTop)
             if span == 2:
                 row, col = row + 1, 0
             elif col == 0:
