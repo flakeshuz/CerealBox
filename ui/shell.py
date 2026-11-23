@@ -6,7 +6,7 @@ import re
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from PyQt6.QtCore import QTimer, Qt
+from PyQt6.QtCore import QThread, QTimer, Qt
 from PyQt6.QtGui import QAction, QKeySequence
 from PyQt6.QtWidgets import (
     QApplication,
@@ -25,10 +25,12 @@ from PyQt6.QtWidgets import (
 
 from ..core import LifeAPI, Reminder
 from ..core import dates as D
+from ..core.updater import UpdateStatus
 from ..modules import default_modules
 from . import theme as T
 from .pager import Pager
 from .sidebar import Sidebar
+from .update_workers import UpdateApplyWorker, UpdateCheckWorker
 from .unlock import ask_new_password, unlock_vault
 
 log = logging.getLogger("cerealbox")
@@ -52,8 +54,13 @@ class Shell(QMainWindow):
         self._titles: list[str] = []
         self._modules = []
         self._loaded_pages: set[int] = set()
+        self._update_worker: QThread | None = None
+        self._update_operation: str | None = None
+        self._check_updates_action: QAction | None = None
 
     def closeEvent(self, event) -> None:
+        if self._update_worker is not None and self._update_worker.isRunning():
+            self._update_worker.wait()
         for timer in self._jobs.values():
             timer.stop()
         if self.api is not None:
@@ -198,6 +205,7 @@ class Shell(QMainWindow):
 
         help_menu = self.menuBar().addMenu("&Help")
         self._action(help_menu, "Keyboard shortcuts", self.show_shortcuts, "F1")
+        self._check_updates_action = self._action(help_menu, "Check for updates…", self._check_for_updates)
 
     @staticmethod
     def _action(menu, text: str, callback, shortcut: str | None = None) -> QAction:
@@ -213,6 +221,79 @@ class Shell(QMainWindow):
         if self.api is not None:
             self.api.set_setting("ui.density", density)
         self.toast(f"Spacing: {density}")
+
+    def _check_for_updates(self) -> None:
+        if self._update_worker is not None and self._update_worker.isRunning():
+            return
+        self.toast("Checking for updates…")
+        worker = UpdateCheckWorker(Path(__file__).resolve().parents[1], self)
+        worker.checked.connect(self._updates_checked)
+        self._start_update_worker(worker, "check")
+
+    def _updates_checked(self, status: UpdateStatus) -> None:
+        if not status.available:
+            QMessageBox.information(
+                self,
+                "CerealBox is up to date",
+                f"This copy is already at main ({status.current_sha[:12]}).",
+            )
+            return
+        if status.has_local_changes:
+            QMessageBox.warning(
+                self,
+                "Update available",
+                f"Main has a newer commit ({status.latest_sha[:12]}), but this checkout has local changes. "
+                "Commit or stash them before updating.",
+            )
+            return
+        answer = QMessageBox.question(
+            self,
+            "Update available",
+            f"Update CerealBox from {status.current_sha[:12]} to {status.latest_sha[:12]}?\n\n"
+            "This applies a fast-forward update from the official main branch. "
+            "Your vault is not changed. Restart CerealBox afterward.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer == QMessageBox.StandardButton.Yes:
+            worker = UpdateApplyWorker(
+                Path(__file__).resolve().parents[1],
+                status.latest_sha,
+                self,
+            )
+            worker.applied.connect(self._update_applied)
+            self._start_update_worker(worker, "apply")
+
+    def _update_applied(self, commit_sha: str) -> None:
+        QMessageBox.information(
+            self,
+            "Update applied",
+            f"CerealBox is now at {commit_sha[:12]}. Close and restart the app to use the update.",
+        )
+
+    def _start_update_worker(self, worker: QThread, operation: str) -> None:
+        self._update_worker = worker
+        self._update_operation = operation
+        if self._check_updates_action is not None:
+            self._check_updates_action.setEnabled(False)
+        worker.failed.connect(self._update_failed)
+        worker.finished.connect(self._update_worker_finished)
+        worker.start()
+
+    def _update_failed(self, message: str) -> None:
+        operation = self._update_operation or "check"
+        log.warning("Update %s failed: %s", operation, message)
+        QMessageBox.critical(
+            self,
+            "Update failed" if operation == "apply" else "Update check failed",
+            message,
+        )
+
+    def _update_worker_finished(self) -> None:
+        if self._check_updates_action is not None:
+            self._check_updates_action.setEnabled(True)
+        self._update_worker = None
+        self._update_operation = None
 
     def _backup(self) -> None:
         dest, _ = QFileDialog.getSaveFileName(

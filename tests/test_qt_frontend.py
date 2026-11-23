@@ -15,6 +15,8 @@ from PyQt6.QtGui import QDropEvent, QPalette
 from PyQt6.QtWidgets import QApplication, QMessageBox, QWidget
 
 from CerealBox.core import Vault
+from CerealBox.core import updater
+from CerealBox.core.updater import UpdateError, UpdateStatus
 from CerealBox.modules.calendar.models import DEFAULT_CATEGORIES
 from CerealBox.modules.calendar.ui import _on_color
 from CerealBox.modules.dashboard import reorder
@@ -40,6 +42,38 @@ class QtFrontendTests(unittest.TestCase):
 
         high, low = sorted((luminance(foreground), luminance(background)), reverse=True)
         return (high + 0.05) / (low + 0.05)
+
+    def test_update_check_compares_main_and_reports_local_changes(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        current = "a" * 40
+        latest = "b" * 40
+        with patch(
+            "CerealBox.core.updater._git",
+            side_effect=[
+                str(root.resolve()),
+                "https://github.com/flakeshuz/CerealBox",
+                current,
+                f"{latest}\trefs/heads/main",
+                " M ui/shell.py",
+            ],
+        ):
+            status = updater.check_for_updates(root)
+        self.assertEqual(status, UpdateStatus(current, latest, True))
+        self.assertTrue(status.available)
+
+    def test_update_apply_requires_clean_checkout_and_fast_forwards_only(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        latest = "b" * 40
+        with patch.object(updater, "check_for_updates", return_value=UpdateStatus("a" * 40, latest, True)):
+            with self.assertRaisesRegex(UpdateError, "local changes"):
+                updater.apply_update(root, latest)
+
+        with patch.object(updater, "check_for_updates", return_value=UpdateStatus("a" * 40, latest, False)):
+            with patch.object(updater, "_git", side_effect=["", latest, "", latest]) as git:
+                self.assertEqual(updater.apply_update(root, latest), latest)
+        self.assertEqual(git.call_args_list[0].args[1:], ("fetch", "--quiet", "origin", "main"))
+        merge_args = git.call_args_list[2].args[1:]
+        self.assertEqual(merge_args[-4:], ("merge", "--ff-only", "--no-edit", "FETCH_HEAD"))
 
     def test_dashboard_drag_reordering_updates_saved_layout(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
