@@ -14,7 +14,8 @@ class DocsVaultModule(Module):
 
     def setup(self):
         # All documents stored under the 'docsvault.docs' collection
-        self.docs = self.col("docsvault.docs")
+        self.docs = self.col("docs")
+        self._legacy_docs = self.col("docsvault.docs")
 
     def services(self):
         return {
@@ -35,10 +36,27 @@ class DocsVaultModule(Module):
         return payload
 
     def get_document(self, doc_id: str) -> dict | None:
-        return self.docs.get(doc_id) if self.docs else None
+        if self.docs:
+            document = self.docs.get(doc_id)
+            if document:
+                return document
+        return self._legacy_docs.get(doc_id) if self._legacy_docs else None
 
     def list_documents(self) -> list:
-        return self.docs.all() if self.docs else []
+        documents = {str(document.get("id") or document.get("name")): document
+                     for document in (self.docs.all() if self.docs else [])}
+        for document in (self._legacy_docs.all() if self._legacy_docs else []):
+            key = str(document.get("id") or document.get("name"))
+            documents.setdefault(key, document)
+        return list(documents.values())
 
     def delete_document(self, doc_id: str) -> bool:
-        return self.docs.delete(doc_id)
+        deleted = bool(self.docs.delete(doc_id)) if self.docs else False
+        legacy_deleted = False
+        if self._legacy_docs:
+            for document in self._legacy_docs.all():
+                if str(document.get("id")) == doc_id or str(document.get("name")) == doc_id:
+                    legacy_deleted = bool(
+                        self._legacy_docs.delete(str(document.get("name")))
+                    ) or legacy_deleted
+        return deleted or legacy_deleted

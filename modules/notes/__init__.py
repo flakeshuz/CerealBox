@@ -17,6 +17,9 @@ class NotesModule(Module):
         return {
             "list_notes": self.list_notes,
             "add_note": self.add_note,
+            "get_note": self.get_note,
+            "update_note": self.update_note,
+            "delete_note": self.delete_note,
         }
 
     def create_view(self, parent):
@@ -52,3 +55,19 @@ class NotesModule(Module):
             rec["linked_event"] = linked_event
         self.notes.put(nid, rec)
         return rec
+
+    def get_note(self, note_id: str) -> dict | None:
+        return self.notes.get(note_id)
+
+    def update_note(self, note_id: str, title: str, content: str) -> dict:
+        rec = self.notes.get(note_id)
+        if rec is None:
+            raise ValueError("Unknown note")
+        rec = dict(rec)
+        rec["title"] = title
+        rec["content"] = content
+        self.notes.put(note_id, rec)
+        return rec
+
+    def delete_note(self, note_id: str) -> bool:
+        return self.notes.delete(note_id)

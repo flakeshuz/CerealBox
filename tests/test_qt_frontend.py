@@ -10,9 +10,10 @@ from unittest.mock import patch
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1].parent))
 
-from PyQt6.QtWidgets import QApplication, QWidget
+from PyQt6.QtWidgets import QApplication, QMessageBox, QWidget
 
 from CerealBox.core import Vault
+from CerealBox.modules.docsvault_ui import document_bytes, decoded_text
 from CerealBox.ui.shell import Shell
 from CerealBox.ui.unlock import PasswordDialog
 
@@ -57,6 +58,66 @@ class QtFrontendTests(unittest.TestCase):
                 self.assertTrue(shell.sidebar.more.isChecked())
                 shell.sidebar.query.clear()
                 self.assertTrue(shell.sidebar._more_body.isHidden())
+            finally:
+                shell.close()
+                self.app.processEvents()
+
+    def test_document_vault_search_preview_size_and_delete(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            vault = Vault.create(Path(directory) / "test.cerealbox", "test-password")
+            shell = Shell(Path(directory) / "test.cerealbox")
+            try:
+                with patch("CerealBox.ui.shell.unlock_vault", return_value=vault):
+                    self.assertTrue(shell.start())
+                shell._select_index(shell._titles.index("Document Vault"))
+                view = shell._pages["Document Vault"]
+                module = view.module
+
+                document = module.put_document("doc_alpha", "Alpha.txt", "hello".encode("utf-8"))
+                module.put_document("doc_beta", "Beta.txt", "é".encode("utf-8"))
+                view._refresh()
+                self.assertEqual(document_bytes(document), 5)
+                self.assertEqual(decoded_text(document), "hello")
+                self.assertEqual(view.tree.topLevelItemCount(), 2)
+
+                view.search.setText("alpha")
+                self.assertEqual(view.tree.topLevelItemCount(), 1)
+                view.tree.setCurrentItem(view.tree.topLevelItem(0))
+                self.assertEqual(view.preview.toPlainText(), "hello")
+
+                with patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes):
+                    view._delete()
+                self.assertIsNone(module.get_document("doc_alpha"))
+                self.assertIn("Deleted", view.status.text())
+            finally:
+                shell.close()
+                self.app.processEvents()
+
+    def test_notes_search_edit_and_delete(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            vault = Vault.create(Path(directory) / "test.cerealbox", "test-password")
+            shell = Shell(Path(directory) / "test.cerealbox")
+            try:
+                with patch("CerealBox.ui.shell.unlock_vault", return_value=vault):
+                    self.assertTrue(shell.start())
+                shell._select_index(shell._titles.index("Notes"))
+                view = shell._pages["Notes"]
+                note = view.mod.add_note("Shopping", "Buy milk")
+                view.refresh()
+
+                view.search.setText("milk")
+                self.assertEqual(view.listbox.count(), 1)
+                view.listbox.setCurrentRow(0)
+                view.mod.update_note(note["id"], "Groceries", "Buy oat milk")
+                view.refresh()
+                view.search.clear()
+                self.assertEqual(view.listbox.count(), 1)
+                self.assertEqual(view.listbox.item(0).text(), "Groceries")
+
+                view.listbox.setCurrentRow(0)
+                with patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes):
+                    view.delete_selected()
+                self.assertIsNone(view.mod.get_note(note["id"]))
             finally:
                 shell.close()
                 self.app.processEvents()

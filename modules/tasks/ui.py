@@ -65,7 +65,8 @@ class TasksView(QWidget):
         self.search.textChanged.connect(self.refresh)
         bar.addWidget(self.search)
         bar.addStretch(1)
-        self._button(bar, "New task", self.new)
+        new_button = self._button(bar, "New task", self.new)
+        new_button.setProperty("primary", True)
 
         actions = QHBoxLayout()
         root.addLayout(actions)

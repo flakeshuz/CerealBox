@@ -114,19 +114,34 @@ class TodayCard(Card):
         day0 = D.day_start(now.date())
         events = self._call("calendar.events_between", day0, day0 + timedelta(days=1), default=[])
         tasks = self._call("tasks.due_today", default=[])
-        self._line("Events")
+        open_tasks = self._call("tasks.open_tasks", default=[])
+        overdue_tasks = [task for task in open_tasks if overdue(task.due, task.has_time, now)]
+        self._line("Overdue", danger=True)
+        if not overdue_tasks:
+            self._empty("Nothing overdue.")
+        for task in overdue_tasks[:5]:
+            due = f"  ·  {task.due:%b} {task.due.day}" if task.due else ""
+            self._line(f"! {task.title}{due}", danger=True)
+        self._line("Today")
         if not events:
             self._empty("Nothing on the calendar today.")
-        for r in events[:5]:
-            when = "All day" if r["all_day"] else D.fmt_time(r["start"])
-            self._line(f"{when}   {r['title']}")
+        else:
+            for r in events[:5]:
+                when = "All day" if r["all_day"] else D.fmt_time(r["start"])
+                self._line(f"{when}   {r['title']}")
         self._line("Tasks")
         if not tasks:
             self._empty("No tasks due today.")
-        for t in tasks[:5]:
-            late = overdue(t.due, t.has_time, now)
-            detail = f"  ·  {D.fmt_time(t.due)}" if t.due and t.has_time else ""
-            self._line(f"○ {t.title}{detail}", danger=late)
+        else:
+            for task in tasks[:5]:
+                if task in overdue_tasks:
+                    continue
+                detail = f"  ·  {D.fmt_time(task.due)}" if task.due and task.has_time else ""
+                self._line(f"○ {task.title}{detail}")
+        if len(overdue_tasks) > 5:
+            self._empty(f"+{len(overdue_tasks) - 5} more overdue")
+        if len(tasks) > 5:
+            self._empty(f"+{len(tasks) - 5} more due today")
 
 
 @card

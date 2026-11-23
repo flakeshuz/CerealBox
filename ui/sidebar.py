@@ -181,3 +181,5 @@ class Sidebar(QFrame):
         if index >= 0 and index < len(self._titles) and self._titles[index] not in CORE_NAMES:
             if not self.query.text().strip():
                 self.more.setChecked(True)
+        elif not self.query.text().strip():
+            self.more.setChecked(False)

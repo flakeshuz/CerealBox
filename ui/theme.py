@@ -63,6 +63,9 @@ def apply(app: QApplication) -> None:
         QTreeWidget::item {{ padding: 6px; }}
         QHeaderView::section {{ background: {SURFACE}; color: {MUTED}; border: 0; padding: 8px; }}
         QStatusBar {{ color: {MUTED}; }}
+        QFrame[card="true"] {{
+            background: {SURFACE}; border: 1px solid {LINE_SOFT}; border-radius: 10px;
+        }}
         QScrollBar:vertical {{ width: 10px; background: {BG}; margin: 0; }}
         QScrollBar::handle:vertical {{ background: {LINE}; border-radius: 4px; min-height: 24px; }}
         QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
