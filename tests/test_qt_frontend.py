@@ -16,16 +16,17 @@ from PyQt6.QtWidgets import QApplication, QLabel, QMessageBox, QPushButton, QWid
 
 from CerealBox.core import Vault
 from CerealBox.core import updater
+from CerealBox.frontends.qt.views import supported_modules
 from CerealBox.core.updater import UpdateError, UpdateStatus
 from CerealBox.modules.calendar.models import DEFAULT_CATEGORIES
-from CerealBox.modules.calendar.ui import _on_color
+from CerealBox.frontends.qt.views.calendar import _on_color
 from CerealBox.modules.dashboard import reorder
-from CerealBox.modules.dashboard.ui import DASHBOARD_CARD_MIME, DashboardCardFrame
-from CerealBox.modules.docsvault_ui import document_bytes, decoded_text
-from CerealBox.ui.shell import Shell
-from CerealBox.ui import theme as T
-from CerealBox.ui.theme_dialog import ThemeDialog
-from CerealBox.ui.unlock import PasswordDialog
+from CerealBox.frontends.qt.views.dashboard import DASHBOARD_CARD_MIME, DashboardCardFrame
+from CerealBox.frontends.qt.views.docsvault import document_bytes, decoded_text
+from CerealBox.frontends.qt.shell import Shell
+from CerealBox.frontends.qt import theme as T
+from CerealBox.frontends.qt.theme_dialog import ThemeDialog
+from CerealBox.frontends.qt.unlock import PasswordDialog
 
 
 class QtFrontendTests(unittest.TestCase):
@@ -55,7 +56,7 @@ class QtFrontendTests(unittest.TestCase):
                 "https://github.com/flakeshuz/CerealBox",
                 current,
                 f"{latest}\trefs/heads/main",
-                " M ui/shell.py",
+                " M frontends/qt/shell.py",
             ],
         ):
             status = updater.check_for_updates(root)
@@ -81,7 +82,7 @@ class QtFrontendTests(unittest.TestCase):
             vault = Vault.create(Path(directory) / "test.cerealbox", "test-password")
             shell = Shell(Path(directory) / "test.cerealbox")
             try:
-                with patch("CerealBox.ui.shell.unlock_vault", return_value=vault):
+                with patch("CerealBox.frontends.qt.shell.unlock_vault", return_value=vault):
                     self.assertTrue(shell.start())
                 view = shell._pages["Dashboard"]
                 view.customize_box.setChecked(True)
@@ -157,7 +158,7 @@ class QtFrontendTests(unittest.TestCase):
             vault = Vault.create(path, "test-password")
             shell = Shell(path)
             try:
-                with patch("CerealBox.ui.shell.unlock_vault", return_value=vault):
+                with patch("CerealBox.frontends.qt.shell.unlock_vault", return_value=vault):
                     self.assertTrue(shell.start())
                 shell.resize(1180, 780)
                 shell.show()
@@ -232,7 +233,7 @@ class QtFrontendTests(unittest.TestCase):
             original = T.theme_config()
             config = T.theme_config("dark")
             try:
-                with patch("CerealBox.ui.shell.unlock_vault", return_value=vault):
+                with patch("CerealBox.frontends.qt.shell.unlock_vault", return_value=vault):
                     self.assertTrue(shell.start())
                 T.apply(self.app, config)
                 shell._save_theme(config, original)
@@ -247,7 +248,7 @@ class QtFrontendTests(unittest.TestCase):
             vault = Vault.create(Path(directory) / "test.cerealbox", "test-password")
             shell = Shell(Path(directory) / "test.cerealbox")
             try:
-                with patch("CerealBox.ui.shell.unlock_vault", return_value=vault):
+                with patch("CerealBox.frontends.qt.shell.unlock_vault", return_value=vault):
                     self.assertTrue(shell.start())
                 self.assertEqual(
                     shell.nb.count(),
@@ -292,12 +293,31 @@ class QtFrontendTests(unittest.TestCase):
                 shell.close()
                 self.app.processEvents()
 
+    def test_qt_frontend_provides_a_view_for_every_module(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            vault = Vault.create(Path(directory) / "test.cerealbox", "test-password")
+            shell = Shell(Path(directory) / "test.cerealbox")
+            try:
+                with patch("CerealBox.frontends.qt.shell.unlock_vault", return_value=vault):
+                    self.assertTrue(shell.start())
+                navigable = {
+                    module.name for module in shell.api.modules.values() if module.show_in_navigation
+                }
+                self.assertEqual({module.name for module in shell._modules}, navigable)
+                self.assertTrue(navigable <= supported_modules())
+                for index, module in enumerate(shell._modules):
+                    shell._select_index(index)
+                    self.assertIsInstance(shell._pages[module.title], QWidget, module.name)
+            finally:
+                shell.close()
+                self.app.processEvents()
+
     def test_document_vault_search_preview_size_and_delete(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             vault = Vault.create(Path(directory) / "test.cerealbox", "test-password")
             shell = Shell(Path(directory) / "test.cerealbox")
             try:
-                with patch("CerealBox.ui.shell.unlock_vault", return_value=vault):
+                with patch("CerealBox.frontends.qt.shell.unlock_vault", return_value=vault):
                     self.assertTrue(shell.start())
                 shell._select_index(shell._titles.index("Document Vault"))
                 view = shell._pages["Document Vault"]
@@ -328,7 +348,7 @@ class QtFrontendTests(unittest.TestCase):
             vault = Vault.create(Path(directory) / "test.cerealbox", "test-password")
             shell = Shell(Path(directory) / "test.cerealbox")
             try:
-                with patch("CerealBox.ui.shell.unlock_vault", return_value=vault):
+                with patch("CerealBox.frontends.qt.shell.unlock_vault", return_value=vault):
                     self.assertTrue(shell.start())
                 shell._select_index(shell._titles.index("Notes"))
                 view = shell._pages["Notes"]

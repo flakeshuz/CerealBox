@@ -84,13 +84,6 @@ class CalendarModule(Module):
             "drain_syncs": self.drain_syncs,
         }
 
-    def create_view(self, parent):
-        from .ui import (
-            CalendarView,  # imported lazily so the engine remains UI-independent
-        )
-
-        return CalendarView(parent, self)
-
     # ---- categories --------------------------------------------------------------------
     def categories(self) -> list[Category]:
         return sorted(self._cats.values(), key=lambda c: c.name.lower())

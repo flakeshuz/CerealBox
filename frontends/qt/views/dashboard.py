@@ -11,9 +11,9 @@ from PyQt6.QtWidgets import (
     QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget,
 )
 
-from ...core import dates as D
-from ...ui import theme as T
-from . import CATALOG, move, reorder, set_shown, set_span
+from ....core import dates as D
+from CerealBox.frontends.qt import theme as T
+from CerealBox.modules.dashboard import CATALOG, move, reorder, set_shown, set_span
 
 log = logging.getLogger("cerealbox")
 WIDGETS: dict[str, type] = {}

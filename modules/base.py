@@ -27,7 +27,3 @@ class Module:
     def services(self) -> dict[str, Callable[..., Any]]:
         """Callables other modules may use, exposed as '<module name>.<key>'."""
         return {}
-
-    def create_view(self, parent):  # -> PyQt6 QWidget | None
-        """Return this module's Qt UI or None if it has no screen."""
-        return

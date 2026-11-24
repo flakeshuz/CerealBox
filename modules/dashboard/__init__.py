@@ -36,10 +36,6 @@ class DashboardModule(Module):
     def services(self):
         return {}
 
-    def create_view(self, parent):
-        from .ui import DashboardView
-        return DashboardView(parent, self)
-
     def _read_layout(self) -> list[dict[str, object]]:
         try:
             items = list(self.col("layout").all()) or []

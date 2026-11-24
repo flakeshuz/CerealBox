@@ -68,11 +68,6 @@ class MoneyModule(Module):
             "add_transfer": self.add_transfer,
         }
 
-    def create_view(self, parent):
-        from .ui import MoneyView  # imported lazily so the engine remains UI-independent
-
-        return MoneyView(parent, self)
-
     # ---- accounts ----------------------------------------------------------------------------
     def accounts(self, include_archived: bool = False) -> list[Account]:
         return sorted((a for a in self._accounts.values() if include_archived or not a.archived),

@@ -12,10 +12,6 @@ class HomeModule(Module):
     def services(self):
         return {"list_maintenance": self.list_maintenance, "add_maintenance": self.add_maintenance}
 
-    def create_view(self, parent):
-        from .ui import HomeView
-        return HomeView(parent, self)
-
     def list_maintenance(self):
         return self.maint.all() or []
 

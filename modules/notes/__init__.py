@@ -23,10 +23,6 @@ class NotesModule(Module):
             "delete_note": self.delete_note,
         }
 
-    def create_view(self, parent):
-        from .ui import NotesView
-        return NotesView(parent, self)
-
     def list_notes(self):
         notes = self.notes.all() or []
         # sort by date if present; safe fallback

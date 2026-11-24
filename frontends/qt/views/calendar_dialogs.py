@@ -11,10 +11,10 @@ from PyQt6.QtWidgets import (
     QSpinBox, QTextEdit, QVBoxLayout, QWidget,
 )
 
-from ...core import dates as D
-from ...core.ids import new_id
-from .models import DEFAULT_COLOR, IMPORT_PALETTE, Category, Event, Occurrence
-from .recurrence import WEEKDAY_CODES, build_rrule, describe_rrule, parse_rrule
+from ....core import dates as D
+from ....core.ids import new_id
+from CerealBox.modules.calendar.models import DEFAULT_COLOR, IMPORT_PALETTE, Category, Event, Occurrence
+from CerealBox.modules.calendar.recurrence import WEEKDAY_CODES, build_rrule, describe_rrule, parse_rrule
 
 NO_REPEAT, CUSTOM = "Does not repeat", "Custom (keep imported rule)"
 REPEAT_CHOICES = [NO_REPEAT, "Daily", "Weekly", "Monthly", "Yearly"]

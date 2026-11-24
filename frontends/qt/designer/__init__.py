@@ -1,16 +1,14 @@
 """Qt Designer frontend bridge (beta).
 
 This module provides an optional Qt-based frontend for CerealBox that can be prototyped with
-Qt Designer (.ui files). It is intentionally optional and lazy-loaded so the Tkinter-based
-UI remains the default/backward-compatible UI for tests.
+Qt Designer (.ui files).
 
 Usage:
-  - If PyQt6 is installed, call cerealbox.ui.qt_designer.start(vault_path) to launch a Qt frontend
+  - If PyQt6 is installed, call cerealbox.frontends.qt.designer.start(vault_path) to launch the prototype
     that talks to the same vault via LifeAPI.
   - You can design a UI with Qt Designer and load it via the Qt loader in this module.
 
-Note: This is a beta feature. It should not affect the existing tests since the function is
-only invoked when explicitly started.
+Note: This is a beta feature and is not the default Qt frontend.
 """
 from __future__ import annotations
 
@@ -36,9 +34,8 @@ def start(vault_path: str) -> bool:
 
     # Lazy import to avoid pulling PyQt or application modules into test environments
     try:
-        from ...core.storage import Vault
-        from ...core.api import LifeAPI
-        from ...modules import default_modules
+        from .....application import create_workspace
+        from ....core.storage import Vault
     except Exception as exc:
         QtWidgets.QMessageBox.critical(None, "CerealBox Unavailable", str(exc))
         return False
@@ -52,9 +49,7 @@ def start(vault_path: str) -> bool:
 
     try:
         vault = Vault.create(vault_path, password) if not Vault.exists(vault_path) else Vault.open(vault_path, password)
-        api = LifeAPI(vault)
-        for module in default_modules():
-            api.register(module)
+        api = create_workspace(vault)
     except Exception as exc:
         QtWidgets.QMessageBox.critical(None, "Open Vault Failed", str(exc))
         return False

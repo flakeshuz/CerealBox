@@ -5,7 +5,7 @@ from pathlib import Path
 
 from PyQt6.QtCore import QThread, pyqtSignal
 
-from ..core.updater import UpdateError, UpdateStatus, apply_update, check_for_updates
+from ...core.updater import UpdateError, UpdateStatus, apply_update, check_for_updates
 
 
 class UpdateCheckWorker(QThread):

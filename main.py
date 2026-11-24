@@ -22,7 +22,7 @@ if __name__ == "__main__":
             raise
         print("Installing CerealBox dependencies...", file=sys.stderr)
         subprocess.run(
-            [sys.executable, "-m", "pip", "install", "--user", "--disable-pip-version-check", "."],
+            [sys.executable, "-m", "pip", "install", "--user", "--disable-pip-version-check", ".[desktop]"],
             cwd=root,
             check=True,
         )

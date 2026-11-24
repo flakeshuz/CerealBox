@@ -12,10 +12,6 @@ class SearchModule(Module):
     def services(self):
         return {"global_search": self.global_search}
 
-    def create_view(self, parent):
-        from .ui import SearchView
-        return SearchView(parent, self)
-
     def global_search(self, term: str) -> list:
         # Lightweight global search across notes, contacts, and calendar (best-effort)
         term_l = (term or "").lower()

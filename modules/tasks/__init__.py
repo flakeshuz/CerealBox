@@ -54,11 +54,6 @@ class TasksModule(Module):
         t = self.get(task_id)
         return self.toggle(task_id) if t and not t.done else t
 
-    def create_view(self, parent):
-        from .ui import TasksView  # imported lazily so the engine remains UI-independent
-
-        return TasksView(parent, self)
-
     # ---- reads -----------------------------------------------------------------------------
     def get(self, task_id: str) -> Task | None:
         t = self._tasks.get(task_id)

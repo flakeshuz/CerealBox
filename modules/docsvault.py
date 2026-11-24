@@ -6,9 +6,6 @@ from .base import Module
 
 
 class DocsVaultModule(Module):
-    def create_view(self, parent):
-        from .docsvault_ui import DocsVaultView
-        return DocsVaultView(parent, self)
     name = "docsvault"
     title = "Document Vault"
     show_in_navigation = True

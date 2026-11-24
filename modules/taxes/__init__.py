@@ -28,11 +28,6 @@ class TaxesModule(Module):
             "export_tax_summary": self.export_tax_summary,
         }
 
-    def create_view(self, parent):
-        from .ui import TaxesView
-
-        return TaxesView(parent, self)
-
     def list_categories(self):
         return self.categories.all()
 

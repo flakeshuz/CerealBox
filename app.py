@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import argparse
+from importlib import import_module, metadata
 import os
 from pathlib import Path
-import sys
+
+from .frontends import Frontend
 
 
 def default_vault_path() -> Path:
@@ -22,19 +24,37 @@ def default_vault_path() -> Path:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="cerealbox", description="Fresh, local, encrypted life management.")
     parser.add_argument("--vault", type=Path, default=None, help=f"vault file (default: {default_vault_path()})")
+    parser.add_argument("--frontend", default="qt", help="frontend to run (default: qt)")
     args = parser.parse_args(argv)
 
-    from PyQt6.QtWidgets import QApplication
+    frontend = _load_frontend(args.frontend)
+    return frontend(args.vault or default_vault_path())
 
-    from .ui import theme
-    from .ui.shell import Shell
 
-    app = QApplication.instance() or QApplication([sys.argv[0]])
-    app.setApplicationName("CerealBox")
-    app.setOrganizationName("CerealBox")
-    theme.apply(app)
-    shell = Shell(args.vault or default_vault_path())
-    if not shell.start():
-        return 0
-    shell.show()
-    return app.exec()
+def _load_frontend(name: str) -> Frontend:
+    entrypoints = {
+        entry.name: entry
+        for entry in metadata.entry_points(group="cerealbox.frontends")
+    }
+    if name in entrypoints:
+        try:
+            return entrypoints[name].load()
+        except ModuleNotFoundError as exc:
+            if exc.name == "PyQt6":
+                raise RuntimeError(
+                    "The Qt frontend requires the desktop extra. Install CerealBox with `pip install '.[desktop]'`."
+                ) from exc
+            raise
+
+    if name == "qt":
+        try:
+            return import_module(".frontends.qt.app", __package__).run
+        except ModuleNotFoundError as exc:
+            if exc.name == "PyQt6":
+                raise RuntimeError(
+                    "The Qt frontend requires the desktop extra. Install CerealBox with `pip install '.[desktop]'`."
+                ) from exc
+            raise
+
+    available = ", ".join(sorted({"qt", *entrypoints})) or "none"
+    raise ValueError(f"Unknown frontend {name!r}. Available frontends: {available}.")

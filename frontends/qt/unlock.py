@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from ..core import Vault, VaultError, WrongPassword
+from ...core import Vault, VaultError, WrongPassword
 from . import theme as T
 
 MIN_LENGTH = 8

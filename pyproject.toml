@@ -7,11 +7,17 @@ name = "cerealbox"
 version = "0.5.0"
 description = "A local, encrypted personal workspace"
 requires-python = ">=3.11"
-dependencies = ["cryptography>=41", "PyQt6>=6.6"]
+dependencies = ["cryptography>=41"]
+
+[project.optional-dependencies]
+desktop = ["PyQt6>=6.6"]
 
 [project.scripts]
 cerealbox = "CerealBox.app:main"
 
+[project.entry-points."cerealbox.frontends"]
+qt = "CerealBox.frontends.qt.app:run"
+
 [tool.setuptools]
-package-dir = {CerealBox = ".", "CerealBox.core" = "core", "CerealBox.ui" = "ui", "CerealBox.ui.qt_designer" = "ui/qt_designer", "CerealBox.modules" = "modules", "CerealBox.modules.calendar" = "modules/calendar", "CerealBox.modules.contacts" = "modules/contacts", "CerealBox.modules.dashboard" = "modules/dashboard", "CerealBox.modules.email" = "modules/email", "CerealBox.modules.goals" = "modules/goals", "CerealBox.modules.habits" = "modules/habits", "CerealBox.modules.health" = "modules/health", "CerealBox.modules.home" = "modules/home", "CerealBox.modules.money" = "modules/money", "CerealBox.modules.notes" = "modules/notes", "CerealBox.modules.passwords" = "modules/passwords", "CerealBox.modules.search" = "modules/search", "CerealBox.modules.tasks" = "modules/tasks", "CerealBox.modules.taxes" = "modules/taxes"}
-packages = ["CerealBox", "CerealBox.core", "CerealBox.ui", "CerealBox.ui.qt_designer", "CerealBox.modules", "CerealBox.modules.calendar", "CerealBox.modules.contacts", "CerealBox.modules.dashboard", "CerealBox.modules.email", "CerealBox.modules.goals", "CerealBox.modules.habits", "CerealBox.modules.health", "CerealBox.modules.home", "CerealBox.modules.money", "CerealBox.modules.notes", "CerealBox.modules.passwords", "CerealBox.modules.search", "CerealBox.modules.tasks", "CerealBox.modules.taxes"]
+package-dir = {CerealBox = ".", "CerealBox.core" = "core", "CerealBox.frontends" = "frontends", "CerealBox.frontends.qt" = "frontends/qt", "CerealBox.frontends.qt.views" = "frontends/qt/views", "CerealBox.frontends.qt.designer" = "frontends/qt/designer", "CerealBox.modules" = "modules", "CerealBox.modules.calendar" = "modules/calendar", "CerealBox.modules.contacts" = "modules/contacts", "CerealBox.modules.dashboard" = "modules/dashboard", "CerealBox.modules.email" = "modules/email", "CerealBox.modules.goals" = "modules/goals", "CerealBox.modules.habits" = "modules/habits", "CerealBox.modules.health" = "modules/health", "CerealBox.modules.home" = "modules/home", "CerealBox.modules.money" = "modules/money", "CerealBox.modules.notes" = "modules/notes", "CerealBox.modules.passwords" = "modules/passwords", "CerealBox.modules.search" = "modules/search", "CerealBox.modules.tasks" = "modules/tasks", "CerealBox.modules.taxes" = "modules/taxes"}
+packages = ["CerealBox", "CerealBox.core", "CerealBox.frontends", "CerealBox.frontends.qt", "CerealBox.frontends.qt.views", "CerealBox.frontends.qt.designer", "CerealBox.modules", "CerealBox.modules.calendar", "CerealBox.modules.contacts", "CerealBox.modules.dashboard", "CerealBox.modules.email", "CerealBox.modules.goals", "CerealBox.modules.habits", "CerealBox.modules.health", "CerealBox.modules.home", "CerealBox.modules.money", "CerealBox.modules.notes", "CerealBox.modules.passwords", "CerealBox.modules.search", "CerealBox.modules.tasks", "CerealBox.modules.taxes"]

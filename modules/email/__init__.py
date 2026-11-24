@@ -24,10 +24,6 @@ class EmailModule(Module):
             "get_email": self.get_email,
         }
 
-    def create_view(self, parent):
-        from .ui import EmailView
-        return EmailView(parent, self)
-
     def list_inbox(self):
         return self.inbox.all()
 

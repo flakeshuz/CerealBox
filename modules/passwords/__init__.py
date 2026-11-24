@@ -16,10 +16,6 @@ class PasswordsModule(Module):
             "list_credentials": self.list_credentials,
         }
 
-    def create_view(self, parent):
-        from .ui import PasswordsView
-        return PasswordsView(parent, self)
-
     def store_credential(self, key: str, value: str) -> dict:
         rec = {"key": key, "value": value}
         self.passwords.put(key, rec)

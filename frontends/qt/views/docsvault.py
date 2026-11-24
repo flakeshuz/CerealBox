@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import base64
 
-from ..core.ids import new_id
+from ....core.ids import new_id
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QDialog,

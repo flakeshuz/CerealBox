@@ -13,11 +13,16 @@ from PyQt6.QtWidgets import (
     QPushButton, QScrollArea, QToolButton, QVBoxLayout, QWidget,
 )
 
-from ...core import dates as D
-from ...ui import theme as T
-from .dialogs import CategoryDialog, EventDialog, ReadOnlyEventDialog, ask_scope
-from .models import Occurrence
-from .subscriptions import Subscription, normalize_url
+from ....core import dates as D
+from CerealBox.frontends.qt import theme as T
+from CerealBox.frontends.qt.views.calendar_dialogs import (
+    CategoryDialog,
+    EventDialog,
+    ReadOnlyEventDialog,
+    ask_scope,
+)
+from CerealBox.modules.calendar.models import Occurrence
+from CerealBox.modules.calendar.subscriptions import Subscription, normalize_url
 
 HOUR_H, GUTTER, CHIP_H = 52, 58, 18
 

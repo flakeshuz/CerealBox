@@ -23,16 +23,17 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from ..core import LifeAPI, Reminder
-from ..core import dates as D
-from ..core.updater import UpdateStatus
-from ..modules import default_modules
+from ...application import create_workspace
+from ...core import LifeAPI, Reminder
+from ...core import dates as D
+from ...core.updater import UpdateStatus
 from . import theme as T
 from .pager import Pager
 from .sidebar import Sidebar
 from .theme_dialog import ThemeDialog
 from .update_workers import UpdateApplyWorker, UpdateCheckWorker
 from .unlock import ask_new_password, unlock_vault
+from .views import create_view
 
 log = logging.getLogger("cerealbox")
 POLL_MS = 15_000
@@ -80,10 +81,7 @@ class Shell(QMainWindow):
         vault = unlock_vault(self, self.vault_path)
         if vault is None:
             return False
-        api = LifeAPI(vault)
-        for module in default_modules():
-            api.register(module)
-        self.attach(api)
+        self.attach(create_workspace(vault))
         return True
 
     def attach(self, api: LifeAPI) -> None:
@@ -437,12 +435,12 @@ class Shell(QMainWindow):
             return
         module = self._modules[index]
         host = self.nb.widget(index)
-        view = module.create_view(host)
+        view = create_view(module, host)
         if view is None:
             self._loaded_pages.add(index)
             return
         if not isinstance(view, QWidget):
-            raise TypeError(f"{module.name}.create_view() must return a PyQt6 QWidget.")
+            raise TypeError(f"The Qt view for {module.name} must be a PyQt6 QWidget.")
         host.layout().addWidget(view)
         self._pages[module.title] = view
         self._loaded_pages.add(index)

@@ -11,14 +11,14 @@ from PyQt6.QtWidgets import (
     QSpinBox, QTableWidget, QTableWidgetItem, QTextEdit, QVBoxLayout, QWidget,
 )
 
-from ...core import dates as D
-from ...core.rrule import FREQ_BY_LABEL as FREQ
-from ...core.rrule import LABEL_BY_FREQ as CHOICE_OF_FREQ
-from ...core.rrule import REPEAT_CHOICES, REPEAT_NONE, WEEKDAY_CODES, build_rrule, parse_rrule
-from ...core.rrule import REPEAT_CUSTOM as CUSTOM
-from ...ui import theme as T
-from . import is_overdue
-from .models import PRIORITY_CODES, PRIORITY_NAMES, Task
+from ....core import dates as D
+from ....core.rrule import FREQ_BY_LABEL as FREQ
+from ....core.rrule import LABEL_BY_FREQ as CHOICE_OF_FREQ
+from ....core.rrule import REPEAT_CHOICES, REPEAT_NONE, WEEKDAY_CODES, build_rrule, parse_rrule
+from ....core.rrule import REPEAT_CUSTOM as CUSTOM
+from CerealBox.frontends.qt import theme as T
+from CerealBox.modules.tasks import is_overdue
+from CerealBox.modules.tasks.models import PRIORITY_CODES, PRIORITY_NAMES, Task
 
 VIEW_LABELS = (("open", "Open"), ("today", "Today"), ("done", "Done"), ("all", "All"))
 

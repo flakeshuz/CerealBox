@@ -2,7 +2,7 @@
 
 ## Purpose and direction
 
-CerealBox is a native PyQt6 desktop application for personal information and life management. The next UI work should make its existing workspace easier to scan, more consistent, and more complete without replacing its warm, personal character or redesigning every screen at once.
+CerealBox is a personal information and life-management application with a replaceable frontend. Its default desktop frontend uses PyQt6. The next UI work should make its existing workspace easier to scan, more consistent, and more complete without replacing its warm, personal character or redesigning every screen at once.
 
 **Recommended direction:** preserve the cream-and-terracotta CerealBox identity; make important information and next actions clearer; establish reusable UI patterns; then improve one complete workflow at a time. Use established design systems as sources of principles, not as visual templates to copy.
 
@@ -24,29 +24,30 @@ Use this document to guide the next small improvement, not as a prerequisite to 
 
 ### Application shell and navigation
 
-- [ui/shell.py](ui/shell.py) builds a native `QMainWindow` with a persistent sidebar and a stacked page area.
+- [application.py](application.py) builds the module/service API without importing a frontend. The default Qt presentation layer is under [frontends/qt/](frontends/qt/); a different frontend can consume the same API.
+- [frontends/qt/shell.py](frontends/qt/shell.py) builds a native `QMainWindow` with a persistent sidebar and a stacked page area.
 - The header shows the page name and date, plus contextual “+ Event” and “+ Task” actions. The status bar reports “Local and encrypted.”
 - The shell provides backup, JSON import/export, password, density, and keyboard-shortcut actions. Existing shortcuts include `Ctrl+1`–`Ctrl+4` for primary workspaces, `Ctrl+N` for a new item, `Ctrl+K` to find a workspace, and `F1` for the shortcut list.
 - [modules/__init__.py](modules/__init__.py) registers 15 workspaces: Dashboard, Calendar, Tasks, Money, Taxes, Document Vault, Notes, Contacts, Habits, Health, Home, Passwords, Goals, Search, and Email.
-- [ui/sidebar.py](ui/sidebar.py) groups spaces into Daily, Personal, and Library sections and filters navigation titles, but currently presents all registered workspaces as navigation choices. This makes 15 distinct areas compete for attention before a user has chosen what to do.
+- [frontends/qt/sidebar.py](frontends/qt/sidebar.py) groups spaces into Daily, Personal, and Library sections and filters navigation titles, but currently presents all registered workspaces as navigation choices. This makes 15 distinct areas compete for attention before a user has chosen what to do.
 - The first four shortcuts already establish a useful default core: Today (Dashboard), Calendar, Tasks, and Money. The shell's quick actions also emphasize events and tasks.
 - The shell initially sets a minimum size of 820×540, then adjusts the minimum size during startup based on screen availability (up to 900×560). Test the actual supported compact size as part of UI work.
 
 ### Visual system
 
-- [ui/theme.py](ui/theme.py) defines a warm cream surface, dark brown text, and terracotta accent, with shared widget styling.
+- [frontends/qt/theme.py](frontends/qt/theme.py) defines a warm cream surface, dark brown text, and terracotta accent, with shared widget styling.
 - Comfortable and dense spacing modes are already available and persisted through the shell.
-- [ui/components.py](ui/components.py) has a small shared set of page-header, page-surface, and list helpers.
+- [frontends/qt/components.py](frontends/qt/components.py) has a small shared set of page-header, page-surface, and list helpers.
 - Several screens add their own local styles. A small, semantic token and component vocabulary would help keep those screens consistent without losing the existing palette.
 
 ### Main workspaces
 
-- [modules/dashboard/ui.py](modules/dashboard/ui.py) supports customizable cards. Quick actions, Tasks, and Today are shown by default; Week, Budget, Links, and Bills can be added. Dashboard cards refresh from application data.
-- [modules/tasks/ui.py](modules/tasks/ui.py) already has Open/Today/Done/All filters, task-and-tag search, selection actions, reminders and repeat settings, and keyboard shortcuts. Retain these useful capabilities while improving consistency and scanability.
-- [modules/docsvault_ui.py](modules/docsvault_ui.py) currently adds text through a small dialog and lists document names and a “Size (bytes)” column. It does not yet provide search, a document detail/preview workflow, or deletion controls.
+- [frontends/qt/views/dashboard.py](frontends/qt/views/dashboard.py) supports customizable cards. Quick actions, Tasks, and Today are shown by default; Week, Budget, Links, and Bills can be added. Dashboard cards refresh from application data.
+- [frontends/qt/views/tasks.py](frontends/qt/views/tasks.py) already has Open/Today/Done/All filters, task-and-tag search, selection actions, reminders and repeat settings, and keyboard shortcuts. Retain these useful capabilities while improving consistency and scanability.
+- [frontends/qt/views/docsvault.py](frontends/qt/views/docsvault.py) currently adds text through a small dialog and lists document names and a “Size (bytes)” column. It does not yet provide search, a document detail/preview workflow, or deletion controls.
 - [modules/docsvault.py](modules/docsvault.py) already supports putting, getting, listing, and deleting documents. It stores document content as Base64 text in the encrypted vault.
 - **Document size display needs care:** the current UI measures `len(data)` on the stored Base64 string, so the displayed count is not the original file’s byte size. A polished listing should calculate and label size accurately.
-- [modules/notes/ui.py](modules/notes/ui.py) lists notes and supports adding one; opening and managing existing notes could be considered in a later consistency pass.
+- [frontends/qt/views/notes.py](frontends/qt/views/notes.py) lists notes and supports adding one; opening and managing existing notes could be considered in a later consistency pass.
 
 ### Existing frontend tests
 
@@ -80,7 +81,7 @@ Make the information architecture the first UI improvement; do not redesign all 
 
 ### 2. Add only the shared foundations the next slice needs
 
-Use the existing [ui/theme.py](ui/theme.py) and [ui/components.py](ui/components.py) rather than introducing a new design framework or blocking on a full design-system rewrite.
+Use the existing [frontends/qt/theme.py](frontends/qt/theme.py) and [frontends/qt/components.py](frontends/qt/components.py) rather than introducing a new design framework or blocking on a full design-system rewrite.
 
 - Reuse the current palette and spacing modes; add or adjust only what the navigation change and next workspace slice require.
 - Keep headings, controls, focus, empty/error states, and confirmation behavior consistent within touched screens.

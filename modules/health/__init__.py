@@ -21,10 +21,6 @@ class HealthModule(Module):
             "link_document": self.link_document,
         }
 
-    def create_view(self, parent):
-        from .ui import HealthView
-        return HealthView(parent, self)
-
     def list_appointments(self):
         return self.appointments.all() or []
 

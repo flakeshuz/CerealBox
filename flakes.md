@@ -92,7 +92,12 @@ Every screen follows the same visual rhythm:
 
 ## Desktop Frontend
 
-The desktop UI uses PyQt6. The application shell owns navigation, shared styling,
-keyboard shortcuts, and vault-level actions; each life-area screen is a Qt widget
-that plugs into the same page stack. Keep navigation searchable and make common
-actions available from the screen where they are useful.
+The application core and life-area modules are independent of presentation.
+`application.create_workspace(vault)` creates the shared service API; modules expose
+operations and data, not widgets. Frontends consume that API and are registered
+through the `cerealbox.frontends` entry-point group.
+
+The default desktop frontend lives in `frontends/qt`. It owns navigation, shared
+styling, keyboard shortcuts, vault-level actions, and Qt views for the modules.
+Install the `desktop` extra to use it. A replacement frontend can use the same
+workspace API without importing PyQt6 or changing module code.

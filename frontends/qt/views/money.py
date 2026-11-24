@@ -12,14 +12,24 @@ from PyQt6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QTextEdit, QVBoxLayout, QWidget,
 )
 
-from ...core import dates as D
-from ...core.rrule import FREQ_BY_LABEL as FREQ
-from ...core.rrule import LABEL_BY_FREQ as CHOICE_OF_FREQ
-from ...core.rrule import REPEAT_CHOICES, REPEAT_NONE, build_rrule, parse_rrule
-from ...core.rrule import REPEAT_CUSTOM as CUSTOM
-from ...ui import theme as T
-from . import csvimport
-from .models import ACCOUNT_KINDS, INCOME, TRANSFER, Account, Bill, Category, Transaction, fmt_money, parse_amount
+from ....core import dates as D
+from ....core.rrule import FREQ_BY_LABEL as FREQ
+from ....core.rrule import LABEL_BY_FREQ as CHOICE_OF_FREQ
+from ....core.rrule import REPEAT_CHOICES, REPEAT_NONE, build_rrule, parse_rrule
+from ....core.rrule import REPEAT_CUSTOM as CUSTOM
+from CerealBox.frontends.qt import theme as T
+from CerealBox.modules.money import csvimport
+from CerealBox.modules.money.models import (
+    ACCOUNT_KINDS,
+    INCOME,
+    TRANSFER,
+    Account,
+    Bill,
+    Category,
+    Transaction,
+    fmt_money,
+    parse_amount,
+)
 
 ALL_ACCOUNTS = "All accounts"
 

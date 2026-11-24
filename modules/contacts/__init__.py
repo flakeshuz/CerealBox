@@ -17,10 +17,6 @@ class ContactsModule(Module):
             "birthdays_entries": self.birthdays_entries,
         }
 
-    def create_view(self, parent):
-        from .ui import ContactsView
-        return ContactsView(parent, self)
-
     def list_contacts(self):
         return self.people.all() or []
 

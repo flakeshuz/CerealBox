@@ -16,10 +16,6 @@ class GoalsModule(Module):
             "weekly_review": self.weekly_review,
         }
 
-    def create_view(self, parent):
-        from .ui import GoalsView
-        return GoalsView(parent, self)
-
     def list_goals(self):
         return self.goals.all() or []
 

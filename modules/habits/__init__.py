@@ -18,10 +18,6 @@ class HabitsModule(Module):
             "list_checkins": self.list_checkins,
         }
 
-    def create_view(self, parent):
-        from .ui import HabitsView
-        return HabitsView(parent, self)
-
     def list_habits(self):
         return self.habits.all() or []
 
